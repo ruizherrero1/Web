@@ -1,0 +1,23 @@
+export const SITE = {
+  name: "Ramón Ruiz Herrero",
+  domain: "ramonruizherrero.com",
+  tagline:
+    "Consultoría tecno-financiera, producto, automatización y aplicaciones personales.",
+  description:
+    "CEO y Partner de Stratos Consulting. Consultor tecno-financiero especializado en mercados, integraciones, producto y automatización.",
+};
+
+export const LINKS = {
+  linkedin: "https://es.linkedin.com/in/ramon-ruiz-herrero",
+  email: "mailto:ruizherrero1@hotmail.com",
+  secondaryEmail: "mailto:ruizherrero1@gmail.com",
+  phone: "tel:+34649925463",
+  cvPdf: "/cv-ramon-ruiz-herrero.pdf",
+  gymLog: "#TODO_URL_GYMLOG_ACTUAL",
+};
+
+export const CONTACT = {
+  primaryEmail: "ruizherrero1@hotmail.com",
+  secondaryEmail: "ruizherrero1@gmail.com",
+  phoneDisplay: "+34 649 925 463",
+};

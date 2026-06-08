@@ -1,0 +1,59 @@
+export type AppStatus =
+  | "Activo"
+  | "En desarrollo"
+  | "Idea"
+  | "Privado"
+  | "Próximamente";
+
+export type AppAccess = "Público" | "Privado" | "Invitación" | "Solo Ramón";
+
+export type AppItem = {
+  name: string;
+  slug: string;
+  description: string;
+  status: AppStatus;
+  access: AppAccess;
+  href: string;
+  focus: string;
+};
+
+export const apps = [
+  {
+    name: "GymLog",
+    slug: "gym",
+    description: "App para registrar entrenamientos, rutinas, historial y progreso.",
+    status: "Activo",
+    access: "Invitación",
+    href: "/apps/gym",
+    focus: "Entrenamiento",
+  },
+  {
+    name: "Recetario",
+    slug: "recetas",
+    description:
+      "Recetas estructuradas, variantes, favoritos y futuras listas de compra.",
+    status: "En desarrollo",
+    access: "Invitación",
+    href: "/apps/recetas",
+    focus: "Organización personal",
+  },
+  {
+    name: "TravelKit",
+    slug: "travelkit",
+    description: "Checklists y documentación para preparar viajes.",
+    status: "Idea",
+    access: "Privado",
+    href: "/privado",
+    focus: "Viajes",
+  },
+  {
+    name: "FinanceLab",
+    slug: "financelab",
+    description:
+      "Simuladores personales de ahorro, inversión, fiscalidad e hipoteca.",
+    status: "Privado",
+    access: "Solo Ramón",
+    href: "/privado",
+    focus: "Finanzas",
+  },
+] as const satisfies readonly AppItem[];
