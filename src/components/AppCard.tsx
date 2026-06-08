@@ -1,0 +1,41 @@
+import Link from "next/link";
+import type { AppItem } from "@/data/apps";
+import { Badge } from "@/components/Badge";
+
+type AppCardProps = Pick<
+  AppItem,
+  "name" | "description" | "status" | "access" | "href" | "focus"
+>;
+
+export function AppCard({
+  name,
+  description,
+  status,
+  access,
+  href,
+  focus,
+}: AppCardProps) {
+  return (
+    <article className="flex min-h-64 flex-col justify-between rounded-lg border border-[var(--line)] bg-[var(--surface)] p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-[var(--accent)] hover:shadow-md">
+      <div>
+        <div className="mb-6 flex flex-wrap gap-2">
+          <Badge tone="status">{status}</Badge>
+          <Badge tone="access">{access}</Badge>
+        </div>
+        <p className="text-sm font-semibold text-[var(--accent-dark)]">
+          {focus}
+        </p>
+        <h3 className="mt-2 text-2xl font-bold text-[var(--ink)]">{name}</h3>
+        <p className="mt-4 text-sm leading-6 text-[var(--muted)]">
+          {description}
+        </p>
+      </div>
+      <Link
+        className="focus-ring mt-8 inline-flex w-fit items-center rounded-md border border-[var(--line)] px-3 py-2 text-sm font-semibold text-[var(--ink)] transition hover:border-[var(--accent)] hover:text-[var(--accent-dark)]"
+        href={href}
+      >
+        Ver detalle
+      </Link>
+    </article>
+  );
+}
