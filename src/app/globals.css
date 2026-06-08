@@ -30,7 +30,7 @@ body {
     radial-gradient(circle at top right, rgba(11, 79, 138, 0.12), transparent 34rem),
     linear-gradient(180deg, #fbfcff 0%, var(--background) 48%, #e9eef6 100%);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter), system-ui, sans-serif;
 }
 
 a:not([class]) {
