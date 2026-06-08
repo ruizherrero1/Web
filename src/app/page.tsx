@@ -2,14 +2,23 @@ import { AppCard } from "@/components/AppCard";
 import { Hero } from "@/components/Hero";
 import { SectionTitle } from "@/components/SectionTitle";
 import { apps } from "@/data/apps";
+import {
+  Briefcase,
+  TrendingUp,
+  ArrowLeftRight,
+  Layers,
+  Zap,
+  Smartphone,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
-const areas = [
-  "CEO y Partner en Stratos",
-  "Mercados financieros",
-  "Integraciones FO-BO",
-  "Producto y procesos",
-  "Automatización e IA",
-  "Apps personales",
+const areas: { label: string; Icon: LucideIcon }[] = [
+  { label: "CEO y Partner en Stratos", Icon: Briefcase },
+  { label: "Mercados financieros", Icon: TrendingUp },
+  { label: "Integraciones FO-BO", Icon: ArrowLeftRight },
+  { label: "Producto y procesos", Icon: Layers },
+  { label: "Automatización e IA", Icon: Zap },
+  { label: "Apps personales", Icon: Smartphone },
 ];
 
 export default function Home() {
@@ -24,12 +33,13 @@ export default function Home() {
             description="Trabajo en el cruce entre negocio, tecnología y producto, con experiencia en consultoría, equipos, mercados financieros, integraciones, datos y procesos operativos."
           />
           <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {areas.map((area) => (
+            {areas.map(({ label, Icon }) => (
               <div
-                className="rounded-lg border border-[var(--line)] bg-white p-4 text-sm font-semibold text-[var(--ink)] shadow-sm"
-                key={area}
+                className="flex items-center gap-3 rounded-lg border border-[var(--line)] bg-white p-4 text-sm font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--accent)] hover:shadow-md"
+                key={label}
               >
-                {area}
+                <Icon className="size-4 shrink-0 text-[var(--accent)]" />
+                {label}
               </div>
             ))}
           </div>
