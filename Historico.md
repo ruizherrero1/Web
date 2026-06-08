@@ -126,6 +126,18 @@ Este archivo debe revisarse antes de modificar la web. Su objetivo es conservar 
 
 - Añadir `www.ramonruizherrero.com` como alias o redirección si se quiere que también funcione con `www`.
 
+## 2026-06-08: Corrección de color en botones
+
+### Cambio
+
+- Corregido el CSS global para que los enlaces con clases propias no hereden el color negro del texto base.
+- Los botones con fondo azul oscuro vuelven a respetar `text-white`.
+
+### Validación
+
+- `npm run lint` sin errores.
+- `npm run build` sin errores.
+
 ## Plantilla para futuros cambios
 
 ### Fecha: YYYY-MM-DD
