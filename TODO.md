@@ -25,6 +25,6 @@
 ## GymLog-Web
 
 - Configurar deploy de `ruizherrero1/GymLog-Web` en Vercel.
-- Terminar DNS de `gym.ramonruizherrero.com` y cambiar el enlace temporal de Vercel por el subdominio.
+- Verificar DNS de `gym.ramonruizherrero.com` tras la propagacion.
 - Crear proyecto Supabase independiente para `GymLog-Web`.
 - Ejecutar `supabase/migrations/202606080001_gymlog_web_user_state.sql`.
