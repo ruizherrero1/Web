@@ -35,7 +35,7 @@ export default function Home() {
           <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {areas.map(({ label, Icon }) => (
               <div
-                className="flex items-center gap-3 rounded-lg border border-[var(--line)] bg-white p-4 text-sm font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--accent)] hover:shadow-md"
+                className="reveal flex items-center gap-3 rounded-lg border border-[var(--line)] bg-white p-4 text-sm font-semibold text-[var(--ink)] shadow-sm transition hover:border-[var(--accent)] hover:shadow-md"
                 key={label}
               >
                 <Icon className="size-4 shrink-0 text-[var(--accent)]" />
@@ -57,7 +57,7 @@ export default function Home() {
           ))}
         </div>
       </section>
-      <section className="bg-[var(--ink)] py-14 text-white">
+      <section className="reveal bg-[var(--ink)] py-14 text-white">
         <div className="container-shell grid gap-8 lg:grid-cols-[0.8fr_1.2fr]">
           <h2 className="text-3xl font-bold">
             Un portal para centralizar herramientas útiles

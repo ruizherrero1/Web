@@ -11,6 +11,7 @@ export const LINKS = {
   linkedin: "https://es.linkedin.com/in/ramon-ruiz-herrero",
   email: "mailto:ruizherrero1@hotmail.com",
   secondaryEmail: "mailto:ruizherrero1@gmail.com",
+  companyEmail: "mailto:ramon.ruiz@stratosdc.es",
   phone: "tel:+34649925463",
   cvPdf: "/cv-ramon-ruiz-herrero.pdf",
   gymLog: "https://gym.ramonruizherrero.com/",
@@ -19,5 +20,6 @@ export const LINKS = {
 export const CONTACT = {
   primaryEmail: "ruizherrero1@hotmail.com",
   secondaryEmail: "ruizherrero1@gmail.com",
+  companyEmail: "ramon.ruiz@stratosdc.es",
   phoneDisplay: "+34 649 925 463",
 };

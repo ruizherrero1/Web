@@ -9,12 +9,19 @@ export default function ContactPage() {
       title="Contacto"
       description="Puedes contactar conmigo para proyectos, colaboraciones o consultas profesionales."
     >
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <a
+          className="focus-ring rounded-lg border border-[var(--line)] bg-white p-5 transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]"
+          href={LINKS.companyEmail}
+        >
+          <p className="text-sm font-semibold text-[var(--accent-dark)]">Email empresa</p>
+          <p className="mt-2 font-bold text-[var(--ink)]">{CONTACT.companyEmail}</p>
+        </a>
         <a
           className="focus-ring rounded-lg border border-[var(--line)] bg-white p-5 transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]"
           href={LINKS.email}
         >
-          <p className="text-sm font-semibold text-[var(--accent-dark)]">Email principal</p>
+          <p className="text-sm font-semibold text-[var(--accent-dark)]">Email personal</p>
           <p className="mt-2 font-bold text-[var(--ink)]">{CONTACT.primaryEmail}</p>
         </a>
         <a
