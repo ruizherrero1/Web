@@ -146,7 +146,7 @@ Este archivo debe revisarse antes de modificar la web. Su objetivo es conservar 
 
 - Clonado `ruizherrero1/GymLog-Web` como repositorio independiente dentro del workspace.
 - Preparada una base Next.js en `GymLog-Web` para la futura app web multiusuario.
-- Actualizado el enlace de GymLog a `https://gym-log-web-zeta.vercel.app` mientras el subdominio `gym.ramonruizherrero.com` termina de configurarse en DNS.
+- Actualizado el enlace de GymLog a `https://gym.ramonruizherrero.com/`.
 - AÃ±adido `GymLog-Web/` a `.gitignore` del repo principal para no mezclar ambos repositorios.
 
 ### Motivo

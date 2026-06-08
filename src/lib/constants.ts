@@ -13,7 +13,7 @@ export const LINKS = {
   secondaryEmail: "mailto:ruizherrero1@gmail.com",
   phone: "tel:+34649925463",
   cvPdf: "/cv-ramon-ruiz-herrero.pdf",
-  gymLog: "https://gym-log-web-zeta.vercel.app",
+  gymLog: "https://gym.ramonruizherrero.com/",
 };
 
 export const CONTACT = {
