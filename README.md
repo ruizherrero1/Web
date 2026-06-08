@@ -56,7 +56,7 @@ npm run build
 - `npm run start`: servidor de producción
 - `npm run lint`: revisión de lint
 
-## Enlaces pendientes
+## Enlaces
 
 Los enlaces principales están centralizados en:
 
