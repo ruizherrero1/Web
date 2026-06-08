@@ -140,6 +140,27 @@ Este archivo debe revisarse antes de modificar la web. Su objetivo es conservar 
 
 ## Plantilla para futuros cambios
 
+## 2026-06-08: PreparaciÃ³n de GymLog-Web como app independiente
+
+### Cambio
+
+- Clonado `ruizherrero1/GymLog-Web` como repositorio independiente dentro del workspace.
+- Preparada una base Next.js en `GymLog-Web` para la futura app web multiusuario.
+- Actualizado el enlace de GymLog a `https://gym-log-web-zeta.vercel.app` mientras el subdominio `gym.ramonruizherrero.com` termina de configurarse en DNS.
+- AÃ±adido `GymLog-Web/` a `.gitignore` del repo principal para no mezclar ambos repositorios.
+
+### Motivo
+
+- Mantener `ruizherrero1/Web` como portal y `ruizherrero1/GymLog-Web` como producto GymLog real.
+- No tocar ni romper `ruizherrero1/Gym-app`, que seguirÃ¡ siendo la app personal original.
+
+### ValidaciÃ³n
+
+- `npm install --strict-ssl=false --ignore-scripts --no-audit --no-fund` ejecutado en `GymLog-Web`.
+- `npm run lint` ejecutado sin errores en `GymLog-Web`.
+- `npm run build` ejecutado sin errores en `GymLog-Web`.
+- Servidor local de `GymLog-Web` arrancado en `http://127.0.0.1:3001` y comprobado con estado `200`.
+
 ### Fecha: YYYY-MM-DD
 
 ### Cambio
