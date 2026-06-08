@@ -102,6 +102,30 @@ Este archivo debe revisarse antes de modificar la web. Su objetivo es conservar 
 - `npm run lint` sin errores.
 - `npm run build` sin errores.
 
+## 2026-06-08: Primer despliegue público y dominio
+
+### Cambio
+
+- Proyecto desplegado en Vercel.
+- URL temporal de Vercel: `https://ramonruizherrero-web.vercel.app/`.
+- Dominio raíz conectado: `https://ramonruizherrero.com/`.
+- DNS gestionado en Cloudflare.
+- Registro configurado en Cloudflare:
+  - Type: `CNAME`
+  - Name: `@`
+  - Target: `4a48584edcea627b.vercel-dns-017.com`
+  - Proxy status: `DNS only`
+
+### Validación
+
+- `https://ramonruizherrero.com/` responde con estado `200`.
+- `http://ramonruizherrero.com/` responde con estado `200`.
+- `www.ramonruizherrero.com` todavía no tiene registro DNS configurado.
+
+### Pendiente
+
+- Añadir `www.ramonruizherrero.com` como alias o redirección si se quiere que también funcione con `www`.
+
 ## Plantilla para futuros cambios
 
 ### Fecha: YYYY-MM-DD
