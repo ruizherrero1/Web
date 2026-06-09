@@ -138,7 +138,7 @@ const themeConfigs: Record<ThemeId, { label: string; swatch: string; activeClass
 
 const tabs: { id: TabId; label: string }[] = [
   { id: "calendario", label: "Calendario" },
-  { id: "faseGrupos", label: "Grupos y partidos" },
+  { id: "faseGrupos", label: "Grupos" },
   { id: "clasificacion", label: "Clasificación" },
   { id: "sedes", label: "Sedes" },
 ];
@@ -443,6 +443,8 @@ export function MundialApp() {
   const [data, setData] = useState<TournamentData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
   const [query, setQuery] = useState("");
   const [groupFilter, setGroupFilter] = useState("todos");
   const [statusFilter, setStatusFilter] = useState("todos");
@@ -462,6 +464,7 @@ export function MundialApp() {
     let controller = new AbortController();
 
     async function loadData() {
+      setIsLoading(true);
       try {
         const response = await fetch(DATA_URL, {
           cache: "no-store",
@@ -473,10 +476,12 @@ export function MundialApp() {
           setData(nextData);
           setUpdatedAt(new Date());
           setError(null);
+          setIsLoading(false);
         }
       } catch (nextError) {
         if (mounted && !(nextError instanceof DOMException)) {
           setError("No se han podido cargar los datos del calendario.");
+          setIsLoading(false);
         }
       }
     }
@@ -493,7 +498,12 @@ export function MundialApp() {
       controller.abort();
       window.clearInterval(interval);
     };
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshTick]);
+
+  function handleRefresh() {
+    setRefreshTick((t) => t + 1);
+  }
 
   const matches = useMemo(() => enrichMatches(data?.matches ?? []), [data]);
   const groups = useMemo(() => buildStandings(matches), [matches]);
@@ -619,13 +629,20 @@ export function MundialApp() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--wc-muted)]">
-            <Badge tone={error ? "status" : "neutral"}>
-              {error ? "Datos no disponibles" : "Datos online"}
-            </Badge>
+            <button
+              type="button"
+              title="Pulsa para actualizar"
+              disabled={isLoading}
+              onClick={handleRefresh}
+              className="inline-flex min-h-7 cursor-pointer items-center gap-1.5 rounded-md border border-[rgba(24,24,27,0.12)] bg-[var(--wc-panel-bg)] px-2.5 py-1 text-xs font-semibold text-[var(--wc-text)] transition hover:border-[var(--wc-accent)] hover:text-[var(--wc-accent)] disabled:cursor-wait disabled:opacity-60"
+            >
+              <span className={isLoading ? "animate-spin inline-block" : ""}>↻</span>
+              {isLoading ? "Actualizando…" : error ? "Error — reintentar" : "Actualizar datos"}
+            </button>
             {updatedAt ? (
               <span>Actualizado {formatMadridTime(updatedAt)}</span>
             ) : (
-              <span>Cargando calendario</span>
+              <span>Cargando…</span>
             )}
           </div>
         </div>
