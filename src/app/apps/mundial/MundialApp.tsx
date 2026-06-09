@@ -143,7 +143,6 @@ const tabs: { id: TabId; label: string }[] = [
   { id: "calendario", label: "Calendario" },
   { id: "faseGrupos", label: "Grupos" },
   { id: "clasificacion", label: "Clasificación" },
-  { id: "sedes", label: "Sedes" },
 ];
 
 const roundLabels: Record<string, string> = {
@@ -683,11 +682,11 @@ export function MundialApp() {
       {/* Content */}
       <div className="container-shell pt-4 pb-8 sm:py-8">
         <div className="flex flex-col gap-4 rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] p-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex overflow-x-auto rounded-md bg-[var(--wc-panel-bg)] p-1">
+          <div className="grid grid-cols-3 rounded-md bg-[var(--wc-panel-bg)] p-1">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
-                className={`focus-ring min-h-10 rounded-md px-4 text-sm font-bold transition ${
+                className={`focus-ring min-h-10 rounded-md px-2 text-center text-sm font-bold transition ${
                   activeTab === tab.id
                     ? "bg-[var(--wc-accent)] text-[var(--wc-accent-fg)] shadow-sm"
                     : "text-[var(--wc-muted)] hover:bg-[var(--wc-card-bg)] hover:text-[var(--wc-text)]"
