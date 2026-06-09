@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { Footer } from "@/components/Footer";
-import { Header } from "@/components/Header";
+import { AppChrome } from "@/components/AppChrome";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
@@ -30,9 +29,7 @@ export default function RootLayout({
   return (
     <html lang="es" className={inter.variable}>
       <body>
-        <Header />
-        <main>{children}</main>
-        <Footer />
+        <AppChrome>{children}</AppChrome>
       </body>
     </html>
   );

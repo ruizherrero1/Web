@@ -98,3 +98,10 @@ body[data-mundial-standalone="true"] > footer {
 body[data-mundial-standalone="true"] main {
   min-height: 100vh;
 }
+
+@media (max-width: 768px) {
+  body:has(.mundial-app-shell) > header,
+  body:has(.mundial-app-shell) > footer {
+    display: none;
+  }
+}
