@@ -99,6 +99,17 @@ body[data-mundial-standalone="true"] main {
   min-height: 100vh;
 }
 
+.mundial-app-shell {
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+}
+
+.mundial-app-shell input,
+.mundial-app-shell select,
+.mundial-app-shell textarea {
+  font-size: 16px;
+}
+
 @media (max-width: 768px) {
   body:has(.mundial-app-shell) > header,
   body:has(.mundial-app-shell) > footer {
