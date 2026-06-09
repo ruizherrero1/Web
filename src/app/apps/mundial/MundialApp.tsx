@@ -460,7 +460,6 @@ export function MundialApp() {
   const [refreshTick, setRefreshTick] = useState(0);
   const [query, setQuery] = useState("");
   const [groupFilter, setGroupFilter] = useState("todos");
-  const [statusFilter, setStatusFilter] = useState("todos");
   const [stageFilter, setStageFilter] = useState<StageFilter>("todos");
   const [spainOnly, setSpainOnly] = useState(false);
 
@@ -578,9 +577,8 @@ export function MundialApp() {
       groupFilter === "todos" ||
       match.group === groupFilter ||
       (groupFilter === "eliminatorias" && !match.group);
-    const matchesStatus = statusFilter === "todos" || match.status === statusFilter;
     const matchesSpain = !spainOnly || isTeamMatch(match, SPAIN_TEAM);
-    return matchesQuery && matchesGroup && matchesStatus && matchesSpain;
+    return matchesQuery && matchesGroup && matchesSpain;
   });
 
   const visibleGroupCards =
@@ -723,8 +721,12 @@ export function MundialApp() {
 
         {activeTab === "calendario" ? (
           <section className="mt-6">
-            <div className="flex flex-wrap gap-2 rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] p-3 shadow-sm">
-              <SpainFilterButton active={spainOnly} onClick={() => setSpainOnly((value) => !value)} />
+            <div className="flex gap-2 rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] p-3 shadow-sm">
+              <SpainFilterButton
+                active={spainOnly}
+                compact
+                onClick={() => setSpainOnly((value) => !value)}
+              />
               <input
                 aria-label="Buscar equipo, ciudad o grupo"
                 className="min-h-9 min-w-0 flex-[1_1_150px] rounded-md border border-[var(--wc-border)] bg-[var(--wc-panel-bg)] px-3 text-sm text-[var(--wc-text)] outline-none transition focus:border-[var(--wc-accent)] focus:ring-2 focus:ring-[var(--wc-accent)]"
@@ -746,17 +748,6 @@ export function MundialApp() {
                   </option>
                 ))}
                 <option value="eliminatorias">Eliminatorias</option>
-              </select>
-              <select
-                aria-label="Filtrar por estado"
-                className="min-h-9 rounded-md border border-[var(--wc-border)] bg-[var(--wc-panel-bg)] px-2 text-sm text-[var(--wc-text)] outline-none transition focus:border-[var(--wc-accent)]"
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value)}
-              >
-                <option value="todos">Estado</option>
-                <option value="upcoming">Programados</option>
-                <option value="awaitingResult">Pendiente</option>
-                <option value="finished">Finalizados</option>
               </select>
             </div>
 
@@ -917,9 +908,11 @@ function ThemeSelector({
 
 function SpainFilterButton({
   active,
+  compact = false,
   onClick,
 }: {
   active: boolean;
+  compact?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -928,14 +921,14 @@ function SpainFilterButton({
       title={active ? "Mostrar todos los partidos" : "Ver partidos de España"}
       aria-pressed={active}
       onClick={onClick}
-      className={`focus-ring inline-flex min-h-9 shrink-0 items-center gap-2 rounded-md px-3 text-sm font-bold transition ${
+      className={`focus-ring inline-flex min-h-9 shrink-0 items-center justify-center gap-2 rounded-md text-sm font-bold transition ${
         active
           ? "bg-[var(--wc-accent)] text-[var(--wc-accent-fg)]"
           : "bg-[var(--wc-panel-bg)] text-[var(--wc-muted)] hover:text-[var(--wc-text)]"
-      }`}
+      } ${compact ? "w-10 px-2" : "px-3"}`}
     >
       <FlagImg code="es" name="España" />
-      <span>España</span>
+      {compact ? <span className="sr-only">España</span> : <span>España</span>}
     </button>
   );
 }
