@@ -163,7 +163,7 @@ const teamInfo: Record<string, TeamInfo> = {
   "South Korea": { name: "Corea del Sur", countryCode: "kr" },
   "Czech Republic": { name: "República Checa", countryCode: "cz" },
   Canada: { name: "Canadá", countryCode: "ca" },
-  "Bosnia & Herzegovina": { name: "Bosnia y Herzegovina", countryCode: "ba" },
+  "Bosnia & Herzegovina": { name: "Bosnia y Herz.", countryCode: "ba" },
   Qatar: { name: "Catar", countryCode: "qa" },
   Switzerland: { name: "Suiza", countryCode: "ch" },
   Brazil: { name: "Brasil", countryCode: "br" },
