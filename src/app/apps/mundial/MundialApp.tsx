@@ -9,6 +9,7 @@ const DATA_URL =
 
 const MADRID_TIME_ZONE = "Europe/Madrid";
 const THEME_STORAGE_KEY = "mundial-theme-v2";
+const SPAIN_TEAM = "Spain";
 
 type ThemeId = "fifa" | "night" | "northamerica";
 type TabId = "calendario" | "faseGrupos" | "clasificacion" | "sedes";
@@ -445,6 +446,10 @@ function isGroupMatch(match: EnrichedMatch) {
   return Boolean(match.group);
 }
 
+function isTeamMatch(match: EnrichedMatch, team: string) {
+  return match.team1 === team || match.team2 === team;
+}
+
 export function MundialApp() {
   const [activeTab, setActiveTab] = useState<TabId>("calendario");
   const [activeTheme, setActiveTheme] = useState<ThemeId>("night");
@@ -457,6 +462,7 @@ export function MundialApp() {
   const [groupFilter, setGroupFilter] = useState("todos");
   const [statusFilter, setStatusFilter] = useState("todos");
   const [stageFilter, setStageFilter] = useState<StageFilter>("todos");
+  const [spainOnly, setSpainOnly] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem(THEME_STORAGE_KEY) as ThemeId | null;
@@ -573,21 +579,36 @@ export function MundialApp() {
       match.group === groupFilter ||
       (groupFilter === "eliminatorias" && !match.group);
     const matchesStatus = statusFilter === "todos" || match.status === statusFilter;
-    return matchesQuery && matchesGroup && matchesStatus;
+    const matchesSpain = !spainOnly || isTeamMatch(match, SPAIN_TEAM);
+    return matchesQuery && matchesGroup && matchesStatus && matchesSpain;
   });
 
   const visibleGroupCards =
-    stageFilter === "todos"
+    (stageFilter === "todos"
       ? groupCards
       : stageFilter.startsWith("group:")
         ? groupCards.filter((group) => group.group === stageFilter.slice("group:".length))
-        : [];
+        : [])
+      .map((group) => ({
+        ...group,
+        matches: spainOnly
+          ? group.matches.filter((match) => isTeamMatch(match, SPAIN_TEAM))
+          : group.matches,
+      }))
+      .filter((group) => !spainOnly || group.matches.length > 0);
   const visibleKnockoutRounds =
-    stageFilter === "todos"
+    (stageFilter === "todos"
       ? knockoutRounds
       : stageFilter.startsWith("round:")
         ? knockoutRounds.filter((round) => round.round === stageFilter.slice("round:".length))
-        : [];
+        : [])
+      .map((round) => ({
+        ...round,
+        matches: spainOnly
+          ? round.matches.filter((match) => isTeamMatch(match, SPAIN_TEAM))
+          : round.matches,
+      }))
+      .filter((round) => !spainOnly || round.matches.length > 0);
 
   return (
     <div
@@ -702,10 +723,11 @@ export function MundialApp() {
 
         {activeTab === "calendario" ? (
           <section className="mt-6">
-            <div className="flex gap-2 rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] p-3 shadow-sm">
+            <div className="flex flex-wrap gap-2 rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] p-3 shadow-sm">
+              <SpainFilterButton active={spainOnly} onClick={() => setSpainOnly((value) => !value)} />
               <input
                 aria-label="Buscar equipo, ciudad o grupo"
-                className="min-h-9 min-w-0 flex-1 rounded-md border border-[var(--wc-border)] bg-[var(--wc-panel-bg)] px-3 text-sm text-[var(--wc-text)] outline-none transition focus:border-[var(--wc-accent)] focus:ring-2 focus:ring-[var(--wc-accent)]"
+                className="min-h-9 min-w-0 flex-[1_1_150px] rounded-md border border-[var(--wc-border)] bg-[var(--wc-panel-bg)] px-3 text-sm text-[var(--wc-text)] outline-none transition focus:border-[var(--wc-accent)] focus:ring-2 focus:ring-[var(--wc-accent)]"
                 placeholder="Buscar..."
                 type="search"
                 value={query}
@@ -750,6 +772,7 @@ export function MundialApp() {
           <>
             <div className="mt-6 overflow-x-auto rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] p-2 shadow-sm">
               <div className="flex min-w-max gap-2">
+                <SpainFilterButton active={spainOnly} onClick={() => setSpainOnly((value) => !value)} />
                 {stageFilterOptions.map((option) => (
                   <button
                     key={option.key}
@@ -889,6 +912,31 @@ function ThemeSelector({
         </button>
       ))}
     </div>
+  );
+}
+
+function SpainFilterButton({
+  active,
+  onClick,
+}: {
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={active ? "Mostrar todos los partidos" : "Ver partidos de España"}
+      aria-pressed={active}
+      onClick={onClick}
+      className={`focus-ring inline-flex min-h-9 shrink-0 items-center gap-2 rounded-md px-3 text-sm font-bold transition ${
+        active
+          ? "bg-[var(--wc-accent)] text-[var(--wc-accent-fg)]"
+          : "bg-[var(--wc-panel-bg)] text-[var(--wc-muted)] hover:text-[var(--wc-text)]"
+      }`}
+    >
+      <FlagImg code="es" name="España" />
+      <span>España</span>
+    </button>
   );
 }
 
