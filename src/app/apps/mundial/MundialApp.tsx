@@ -834,6 +834,39 @@ function TeamLabel({
   );
 }
 
+const GROUP_COLORS: Record<string, { bg: string; color: string }> = {
+  A: { bg: "#ff6b6b", color: "#5c0000" },
+  B: { bg: "#ff9f43", color: "#5c2600" },
+  C: { bg: "#ffd43b", color: "#4a3000" },
+  D: { bg: "#a9e34b", color: "#2a4400" },
+  E: { bg: "#51cf66", color: "#0a4020" },
+  F: { bg: "#20c997", color: "#044035" },
+  G: { bg: "#22d3ee", color: "#0c3e54" },
+  H: { bg: "#4dabf7", color: "#0c2860" },
+  I: { bg: "#748ffc", color: "#16066e" },
+  J: { bg: "#da77f2", color: "#46066e" },
+  K: { bg: "#f783ac", color: "#5c0030" },
+  L: { bg: "#f9a825", color: "#4a2800" },
+};
+
+function GroupBadge({ group }: { group?: string }) {
+  const label = groupShortName(group);
+  const letter = group?.split(" ").pop() ?? "";
+  const colors = GROUP_COLORS[letter];
+  return (
+    <span
+      className="inline-flex min-h-7 items-center rounded-md border px-2.5 py-1 text-xs font-bold"
+      style={
+        colors
+          ? { background: colors.bg, color: colors.color, borderColor: "transparent" }
+          : { background: "var(--wc-panel-bg)", color: "var(--wc-muted)", borderColor: "transparent" }
+      }
+    >
+      {label}
+    </span>
+  );
+}
+
 function MatchRow({ match }: { match: EnrichedMatch }) {
   const score = scoreLabel(match.score);
 
@@ -846,11 +879,7 @@ function MatchRow({ match }: { match: EnrichedMatch }) {
         <span className="text-[var(--wc-muted)]">·</span>
         <span className="text-[var(--wc-muted)]">{formatMadridTime(match.startsAt)}</span>
         <span className="text-[var(--wc-muted)]">·</span>
-        <Badge>{groupShortName(match.group)}</Badge>
-        <Badge>{match.round}</Badge>
-        <Badge tone={match.status === "finished" ? "status" : "neutral"}>
-          {statusLabel(match.status)}
-        </Badge>
+        <GroupBadge group={match.group} />
       </div>
       <div className="mt-2 flex items-center gap-2">
         <div className="min-w-0 flex-1 text-right text-sm font-bold text-[var(--wc-text)]">
