@@ -539,8 +539,8 @@ export function MundialApp() {
             ⚽
           </span>
         </div>
-        <div className="container-shell relative py-10">
-          <div className="mb-6 flex justify-end">
+        <div className="container-shell relative py-5 lg:py-10">
+          <div className="mb-3 flex justify-end lg:mb-6">
             <ThemeSelector activeTheme={activeTheme} onThemeChange={handleThemeChange} />
           </div>
           <div className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
@@ -1005,25 +1005,25 @@ function GroupTable({ group, teams }: { group: string; teams: Standing[] }) {
         <Badge>{`${teams.length} equipos`}</Badge>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[620px] border-collapse text-sm">
-          <thead className="bg-[var(--wc-panel-bg)] text-left text-xs uppercase tracking-[0.1em] text-[var(--wc-muted)]">
+        <table className="w-full border-collapse text-xs sm:text-sm">
+          <thead className="bg-[var(--wc-panel-bg)] text-left text-[10px] uppercase tracking-[0.08em] text-[var(--wc-muted)] sm:text-xs sm:tracking-[0.1em]">
             <tr>
-              <th className="px-4 py-3">Equipo</th>
-              <th className="px-3 py-3 text-center">PJ</th>
-              <th className="px-3 py-3 text-center">G</th>
-              <th className="px-3 py-3 text-center">E</th>
-              <th className="px-3 py-3 text-center">P</th>
-              <th className="px-3 py-3 text-center">GF</th>
-              <th className="px-3 py-3 text-center">GC</th>
-              <th className="px-3 py-3 text-center">DG</th>
-              <th className="px-4 py-3 text-center">Pts</th>
+              <th className="px-2 py-2 sm:px-4 sm:py-3">Equipo</th>
+              <th className="px-1.5 py-2 text-center sm:px-3 sm:py-3">PJ</th>
+              <th className="px-1.5 py-2 text-center sm:px-3 sm:py-3">G</th>
+              <th className="px-1.5 py-2 text-center sm:px-3 sm:py-3">E</th>
+              <th className="px-1.5 py-2 text-center sm:px-3 sm:py-3">P</th>
+              <th className="hidden px-3 py-3 text-center sm:table-cell">GF</th>
+              <th className="hidden px-3 py-3 text-center sm:table-cell">GC</th>
+              <th className="px-1.5 py-2 text-center sm:px-3 sm:py-3">DG</th>
+              <th className="px-2 py-2 text-center sm:px-4 sm:py-3">Pts</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--wc-border-inner)]">
             {teams.map((team, index) => (
               <tr key={team.team} className={index < 2 ? "bg-[var(--wc-row-hl)]" : undefined}>
-                <td className="px-4 py-3 font-bold text-[var(--wc-text)]">
-                  <span className="mr-2 inline-flex h-6 w-6 items-center justify-center rounded-md bg-[var(--wc-panel-bg)] text-xs text-[var(--wc-muted)]">
+                <td className="px-2 py-2 font-bold text-[var(--wc-text)] sm:px-4 sm:py-3">
+                  <span className="mr-1 inline-flex h-5 w-5 items-center justify-center rounded bg-[var(--wc-panel-bg)] text-[10px] text-[var(--wc-muted)] sm:mr-2 sm:h-6 sm:w-6 sm:text-xs">
                     {index + 1}
                   </span>
                   <TeamLabel team={team.team} compact />
@@ -1032,10 +1032,10 @@ function GroupTable({ group, teams }: { group: string; teams: Standing[] }) {
                 <Cell>{team.wins}</Cell>
                 <Cell>{team.draws}</Cell>
                 <Cell>{team.losses}</Cell>
-                <Cell>{team.goalsFor}</Cell>
-                <Cell>{team.goalsAgainst}</Cell>
+                <HiddenCell>{team.goalsFor}</HiddenCell>
+                <HiddenCell>{team.goalsAgainst}</HiddenCell>
                 <Cell>{team.goalDifference}</Cell>
-                <td className="px-4 py-3 text-center text-base font-black text-[var(--wc-accent)]">
+                <td className="px-2 py-2 text-center text-sm font-black text-[var(--wc-accent)] sm:px-4 sm:py-3 sm:text-base">
                   {team.points}
                 </td>
               </tr>
@@ -1048,5 +1048,9 @@ function GroupTable({ group, teams }: { group: string; teams: Standing[] }) {
 }
 
 function Cell({ children }: { children: React.ReactNode }) {
-  return <td className="px-3 py-3 text-center text-[var(--wc-muted)]">{children}</td>;
+  return <td className="px-1.5 py-2 text-center text-[var(--wc-muted)] sm:px-3 sm:py-3">{children}</td>;
+}
+
+function HiddenCell({ children }: { children: React.ReactNode }) {
+  return <td className="hidden px-3 py-3 text-center text-[var(--wc-muted)] sm:table-cell">{children}</td>;
 }
