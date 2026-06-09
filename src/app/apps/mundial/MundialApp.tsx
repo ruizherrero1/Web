@@ -1045,9 +1045,8 @@ function GroupFixtureCard({
       <div className="border-b border-[var(--wc-border)] bg-[var(--wc-card-header)] px-4 py-4 text-white">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-xl font-bold">{groupShortName(group)}</h2>
-          <Badge>{`${matches.length} partidos`}</Badge>
         </div>
-        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        <div className="mt-4 grid grid-cols-2 gap-2">
           {teams.map((team) => (
             <div
               key={team}
@@ -1130,7 +1129,6 @@ function GroupTable({ group, teams }: { group: string; teams: Standing[] }) {
     <article className="overflow-hidden rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] shadow-sm">
       <div className="flex items-center justify-between border-b border-[var(--wc-border)] bg-[var(--wc-card-header)] px-4 py-3 text-white">
         <h2 className="text-lg font-bold">{groupShortName(group)}</h2>
-        <Badge>{`${teams.length} equipos`}</Badge>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-xs sm:text-sm">
