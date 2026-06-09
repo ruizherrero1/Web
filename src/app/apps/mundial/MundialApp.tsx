@@ -575,7 +575,7 @@ export function MundialApp() {
               <p className="text-sm font-semibold text-[var(--wc-hero-label)]">Próximo partido</p>
               {nextMatch ? (
                 <div className="mt-4">
-                  <div className="flex flex-col gap-1 text-xl font-bold">
+                  <div className="flex flex-wrap items-center gap-2 text-lg font-bold">
                     <TeamLabel team={nextMatch.team1} />
                     <span className="text-sm font-bold text-[var(--wc-hero-label)]">vs</span>
                     <TeamLabel team={nextMatch.team2} />
@@ -872,13 +872,14 @@ function MatchRow({ match }: { match: EnrichedMatch }) {
 
   return (
     <article className="rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] p-3 shadow-sm transition hover:border-[var(--wc-accent)]">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-        <span className="font-bold capitalize text-[var(--wc-text)]">
-          {formatMadridDate(match.startsAt)}
-        </span>
-        <span className="text-[var(--wc-muted)]">·</span>
-        <span className="text-[var(--wc-muted)]">{formatMadridTime(match.startsAt)}</span>
-        <span className="text-[var(--wc-muted)]">·</span>
+      <div className="flex items-center justify-between gap-2 text-xs">
+        <div className="flex items-center gap-x-2">
+          <span className="font-bold capitalize text-[var(--wc-text)]">
+            {formatMadridDate(match.startsAt)}
+          </span>
+          <span className="text-[var(--wc-muted)]">·</span>
+          <span className="text-[var(--wc-muted)]">{formatMadridTime(match.startsAt)}</span>
+        </div>
         <GroupBadge group={match.group} />
       </div>
       <div className="mt-2 flex items-center gap-2">
@@ -892,15 +893,9 @@ function MatchRow({ match }: { match: EnrichedMatch }) {
           <TeamLabel team={match.team2} />
         </div>
       </div>
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 text-xs text-[var(--wc-muted)]">
-        {match.ground ? <span>{match.ground}</span> : null}
-        {match.time ? (
-          <>
-            <span>·</span>
-            <span>Hora local: {match.time}</span>
-          </>
-        ) : null}
-      </div>
+      {match.ground ? (
+        <p className="mt-1.5 text-center text-xs text-[var(--wc-muted)]">{match.ground}</p>
+      ) : null}
     </article>
   );
 }
