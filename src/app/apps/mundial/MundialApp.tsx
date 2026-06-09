@@ -506,9 +506,6 @@ export function MundialApp() {
   );
 
   const nextMatch = matches.find((match) => match.status !== "finished");
-  const finishedCount = matches.filter((match) => match.status === "finished").length;
-  const groupStageCount = matches.filter(isGroupMatch).length;
-  const knockoutCount = matches.length - groupStageCount;
 
   const normalizedQuery = normalizeText(query.trim());
   const filteredMatches = matches.filter((match) => {
@@ -543,21 +540,21 @@ export function MundialApp() {
           <div className="mb-3 flex justify-end lg:mb-6">
             <ThemeSelector activeTheme={activeTheme} onThemeChange={handleThemeChange} />
           </div>
-          <div className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
+          <div className="grid gap-4 lg:gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
             <div>
               <p className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-[var(--wc-hero-label)]">
                 <span>🏆</span>
                 <span>FIFA World Cup 2026</span>
               </p>
-              <h1 className="mt-4 text-5xl font-black leading-[1.05] sm:text-6xl">
+              <h1 className="mt-2 text-4xl font-black leading-[1.05] sm:mt-4 sm:text-5xl lg:text-6xl">
                 MUNDIAL
                 <br />
                 2026
               </h1>
-              <p className="mt-4 max-w-2xl text-base leading-7 text-[var(--wc-hero-soft)]">
+              <p className="mt-2 hidden max-w-2xl text-base leading-7 text-[var(--wc-hero-soft)] sm:mt-4 sm:block">
                 Calendario, horarios en España, resultados y clasificaciones.
               </p>
-              <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-[var(--wc-hero-soft)]">
+              <p className="mt-3 hidden flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-[var(--wc-hero-soft)] sm:flex">
                 <span className="font-semibold">Sedes:</span>
                 <span className="flex items-center gap-1.5">
                   <FlagImg code="us" name="Estados Unidos" />
@@ -602,15 +599,8 @@ export function MundialApp() {
       </section>
 
       {/* Content */}
-      <div className="container-shell py-8">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Metric label="Partidos" value={matches.length || "104"} />
-          <Metric label="Fase de grupos" value={groupStageCount || "72"} />
-          <Metric label="Eliminatorias" value={knockoutCount || "32"} />
-          <Metric label="Finalizados" value={finishedCount} />
-        </div>
-
-        <div className="mt-6 flex flex-col gap-4 rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] p-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+      <div className="container-shell pt-4 pb-8 sm:py-8">
+        <div className="flex flex-col gap-4 rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] p-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
           <div className="flex overflow-x-auto rounded-md bg-[var(--wc-panel-bg)] p-1">
             {tabs.map((tab) => (
               <button
@@ -642,54 +632,40 @@ export function MundialApp() {
 
         {activeTab === "calendario" ? (
           <section className="mt-6">
-            <div className="grid gap-3 rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] p-4 shadow-sm lg:grid-cols-[1fr_220px_220px]">
-              <label className="block">
-                <span className="text-xs font-bold uppercase tracking-[0.12em] text-[var(--wc-muted)]">
-                  Buscar
-                </span>
-                <input
-                  className="mt-2 min-h-11 w-full rounded-md border border-[var(--wc-border)] bg-[var(--wc-card-bg)] px-3 text-sm text-[var(--wc-text)] outline-none transition focus:border-[var(--wc-accent)] focus:ring-2 focus:ring-[var(--wc-accent)]"
-                  placeholder="Equipo, ciudad, grupo..."
-                  type="search"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                />
-              </label>
-
-              <label className="block">
-                <span className="text-xs font-bold uppercase tracking-[0.12em] text-[var(--wc-muted)]">
-                  Grupo
-                </span>
-                <select
-                  className="mt-2 min-h-11 w-full rounded-md border border-[var(--wc-border)] bg-[var(--wc-card-bg)] px-3 text-sm text-[var(--wc-text)] outline-none transition focus:border-[var(--wc-accent)]"
-                  value={groupFilter}
-                  onChange={(event) => setGroupFilter(event.target.value)}
-                >
-                  <option value="todos">Todos</option>
-                  {groupOptions.map((group) => (
-                    <option key={group} value={group}>
-                      {groupShortName(group)}
-                    </option>
-                  ))}
-                  <option value="eliminatorias">Eliminatorias</option>
-                </select>
-              </label>
-
-              <label className="block">
-                <span className="text-xs font-bold uppercase tracking-[0.12em] text-[var(--wc-muted)]">
-                  Estado
-                </span>
-                <select
-                  className="mt-2 min-h-11 w-full rounded-md border border-[var(--wc-border)] bg-[var(--wc-card-bg)] px-3 text-sm text-[var(--wc-text)] outline-none transition focus:border-[var(--wc-accent)]"
-                  value={statusFilter}
-                  onChange={(event) => setStatusFilter(event.target.value)}
-                >
-                  <option value="todos">Todos</option>
-                  <option value="upcoming">Programados</option>
-                  <option value="awaitingResult">Pendiente resultado</option>
-                  <option value="finished">Finalizados</option>
-                </select>
-              </label>
+            <div className="flex gap-2 rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] p-3 shadow-sm">
+              <input
+                aria-label="Buscar equipo, ciudad o grupo"
+                className="min-h-9 min-w-0 flex-1 rounded-md border border-[var(--wc-border)] bg-[var(--wc-panel-bg)] px-3 text-sm text-[var(--wc-text)] outline-none transition focus:border-[var(--wc-accent)] focus:ring-2 focus:ring-[var(--wc-accent)]"
+                placeholder="Buscar..."
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+              <select
+                aria-label="Filtrar por grupo"
+                className="min-h-9 rounded-md border border-[var(--wc-border)] bg-[var(--wc-panel-bg)] px-2 text-sm text-[var(--wc-text)] outline-none transition focus:border-[var(--wc-accent)]"
+                value={groupFilter}
+                onChange={(event) => setGroupFilter(event.target.value)}
+              >
+                <option value="todos">Grupo</option>
+                {groupOptions.map((group) => (
+                  <option key={group} value={group}>
+                    {groupShortName(group)}
+                  </option>
+                ))}
+                <option value="eliminatorias">Eliminatorias</option>
+              </select>
+              <select
+                aria-label="Filtrar por estado"
+                className="min-h-9 rounded-md border border-[var(--wc-border)] bg-[var(--wc-panel-bg)] px-2 text-sm text-[var(--wc-text)] outline-none transition focus:border-[var(--wc-accent)]"
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value)}
+              >
+                <option value="todos">Estado</option>
+                <option value="upcoming">Programados</option>
+                <option value="awaitingResult">Pendiente</option>
+                <option value="finished">Finalizados</option>
+              </select>
             </div>
 
             <div className="mt-4 space-y-3">
@@ -825,16 +801,6 @@ function ThemeSelector({
   );
 }
 
-function Metric({ label, value }: { label: string; value: number | string }) {
-  return (
-    <div className="rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] p-4 shadow-sm">
-      <p className="text-xs font-bold uppercase tracking-[0.12em] text-[var(--wc-muted)]">
-        {label}
-      </p>
-      <p className="mt-2 text-3xl font-bold text-[var(--wc-text)]">{value}</p>
-    </div>
-  );
-}
 
 function TeamLabel({
   team,
@@ -872,38 +838,39 @@ function MatchRow({ match }: { match: EnrichedMatch }) {
   const score = scoreLabel(match.score);
 
   return (
-    <article className="grid gap-4 rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] p-4 shadow-sm transition hover:border-[var(--wc-accent)] md:grid-cols-[150px_1fr_180px] md:items-center">
-      <div>
-        <p className="text-sm font-bold capitalize text-[var(--wc-text)]">
+    <article className="rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] p-3 shadow-sm transition hover:border-[var(--wc-accent)]">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+        <span className="font-bold capitalize text-[var(--wc-text)]">
           {formatMadridDate(match.startsAt)}
-        </p>
-        <p className="mt-1 text-sm text-[var(--wc-muted)]">{formatMadridTime(match.startsAt)}</p>
+        </span>
+        <span className="text-[var(--wc-muted)]">·</span>
+        <span className="text-[var(--wc-muted)]">{formatMadridTime(match.startsAt)}</span>
+        <span className="text-[var(--wc-muted)]">·</span>
+        <Badge>{groupShortName(match.group)}</Badge>
+        <Badge>{match.round}</Badge>
+        <Badge tone={match.status === "finished" ? "status" : "neutral"}>
+          {statusLabel(match.status)}
+        </Badge>
       </div>
-
-      <div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge>{groupShortName(match.group)}</Badge>
-          <Badge>{match.round}</Badge>
-          <Badge tone={match.status === "finished" ? "status" : "neutral"}>
-            {statusLabel(match.status)}
-          </Badge>
+      <div className="mt-2 flex items-center gap-2">
+        <div className="min-w-0 flex-1 text-right text-sm font-bold text-[var(--wc-text)]">
+          <TeamLabel team={match.team1} align="right" />
         </div>
-        <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
-          <p className="text-lg font-bold text-[var(--wc-text)] sm:text-right">
-            <TeamLabel team={match.team1} align="right" />
-          </p>
-          <p className="rounded-md bg-[var(--wc-score-bg)] px-3 py-2 text-center text-sm font-black text-[var(--wc-score-text)]">
-            {score ?? "vs"}
-          </p>
-          <p className="text-lg font-bold text-[var(--wc-text)]">
-            <TeamLabel team={match.team2} />
-          </p>
+        <div className="shrink-0 rounded bg-[var(--wc-score-bg)] px-2.5 py-1 text-xs font-black text-[var(--wc-score-text)]">
+          {score ?? "vs"}
+        </div>
+        <div className="min-w-0 flex-1 text-sm font-bold text-[var(--wc-text)]">
+          <TeamLabel team={match.team2} />
         </div>
       </div>
-
-      <div className="text-sm text-[var(--wc-muted)] md:text-right">
-        <p className="font-semibold text-[var(--wc-text)]">{match.ground ?? "Sede por confirmar"}</p>
-        {match.time ? <p className="mt-1">Hora local: {match.time}</p> : null}
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 text-xs text-[var(--wc-muted)]">
+        {match.ground ? <span>{match.ground}</span> : null}
+        {match.time ? (
+          <>
+            <span>·</span>
+            <span>Hora local: {match.time}</span>
+          </>
+        ) : null}
       </div>
     </article>
   );
@@ -974,25 +941,31 @@ function MiniMatchRow({ match }: { match: EnrichedMatch }) {
   const score = scoreLabel(match.score);
 
   return (
-    <div className="grid gap-3 px-4 py-4 text-sm md:grid-cols-[120px_1fr_145px] md:items-center">
-      <div className="text-[var(--wc-muted)]">
-        <p className="font-bold capitalize text-[var(--wc-text)]">
+    <div className="px-4 py-3">
+      <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-[var(--wc-muted)]">
+        <span className="font-semibold capitalize text-[var(--wc-text)]">
           {formatMadridDate(match.startsAt)}
-        </p>
-        <p className="mt-1">{formatMadridTime(match.startsAt)}</p>
+        </span>
+        <span>·</span>
+        <span>{formatMadridTime(match.startsAt)}</span>
+        {match.ground ? (
+          <>
+            <span>·</span>
+            <span>{match.ground}</span>
+          </>
+        ) : null}
       </div>
-      <div className="grid gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
-        <p className="font-bold text-[var(--wc-text)] sm:text-right">
+      <div className="mt-1.5 flex items-center gap-2">
+        <div className="min-w-0 flex-1 text-right text-xs font-bold text-[var(--wc-text)]">
           <TeamLabel team={match.team1} compact align="right" />
-        </p>
-        <p className="rounded-md bg-[var(--wc-score-bg)] px-3 py-1.5 text-center text-xs font-black text-[var(--wc-score-text)]">
+        </div>
+        <div className="shrink-0 rounded bg-[var(--wc-score-bg)] px-2 py-1 text-xs font-black text-[var(--wc-score-text)]">
           {score ?? "vs"}
-        </p>
-        <p className="font-bold text-[var(--wc-text)]">
+        </div>
+        <div className="min-w-0 flex-1 text-xs font-bold text-[var(--wc-text)]">
           <TeamLabel team={match.team2} compact />
-        </p>
+        </div>
       </div>
-      <p className="text-[var(--wc-muted)] md:text-right">{match.ground}</p>
     </div>
   );
 }
