@@ -19,6 +19,16 @@ export type AppItem = {
 
 export const apps = [
   {
+    name: "Mundial 2026",
+    slug: "mundial",
+    description:
+      "Calendario, horarios en España, resultados y clasificaciones del Mundial.",
+    status: "Activo",
+    access: "Público",
+    href: "/apps/mundial",
+    focus: "Fútbol",
+  },
+  {
     name: "GymLog",
     slug: "gym",
     description: "App para registrar entrenamientos, rutinas, historial y progreso.",
