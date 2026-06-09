@@ -8,9 +8,11 @@ const DATA_URL =
   "https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json";
 
 const MADRID_TIME_ZONE = "Europe/Madrid";
+const THEME_STORAGE_KEY = "mundial-theme-v2";
 
 type ThemeId = "fifa" | "night" | "northamerica";
 type TabId = "calendario" | "faseGrupos" | "clasificacion" | "sedes";
+type StageFilter = `group:${string}` | `round:${string}` | "todos";
 type MatchStatus = "finished" | "awaitingResult" | "upcoming";
 
 type Score = {
@@ -143,6 +145,18 @@ const tabs: { id: TabId; label: string }[] = [
   { id: "sedes", label: "Sedes" },
 ];
 
+const roundLabels: Record<string, string> = {
+  "Round of 32": "Dieciseisavos",
+  "Round of 16": "Octavos",
+  "Quarter-finals": "Cuartos",
+  "Quarter-finals 1": "Cuartos",
+  "Semi-finals": "Semis",
+  "Semi-finals 1": "Semis",
+  "Third-place match": "3er puesto",
+  "Third-place play-off": "3er puesto",
+  Final: "Final",
+};
+
 const teamInfo: Record<string, TeamInfo> = {
   Mexico: { name: "México", countryCode: "mx" },
   "South Africa": { name: "Sudáfrica", countryCode: "za" },
@@ -264,12 +278,6 @@ function scoreLabel(score?: Score) {
       ? " prórroga"
       : "";
   return `${score.ft[0]}-${score.ft[1]}${suffix}`;
-}
-
-function statusLabel(status: MatchStatus) {
-  if (status === "finished") return "Finalizado";
-  if (status === "awaitingResult") return "Pendiente resultado";
-  return "Programado";
 }
 
 function groupShortName(group?: string) {
@@ -439,7 +447,7 @@ function isGroupMatch(match: EnrichedMatch) {
 
 export function MundialApp() {
   const [activeTab, setActiveTab] = useState<TabId>("calendario");
-  const [activeTheme, setActiveTheme] = useState<ThemeId>("northamerica");
+  const [activeTheme, setActiveTheme] = useState<ThemeId>("night");
   const [data, setData] = useState<TournamentData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
@@ -448,15 +456,36 @@ export function MundialApp() {
   const [query, setQuery] = useState("");
   const [groupFilter, setGroupFilter] = useState("todos");
   const [statusFilter, setStatusFilter] = useState("todos");
+  const [stageFilter, setStageFilter] = useState<StageFilter>("todos");
 
   useEffect(() => {
-    const saved = localStorage.getItem("mundial-theme") as ThemeId | null;
-    if (saved && saved in themes) setActiveTheme(saved);
+    const saved = localStorage.getItem(THEME_STORAGE_KEY) as ThemeId | null;
+    if (!saved || !(saved in themes)) {
+      return undefined;
+    }
+
+    const frame = window.requestAnimationFrame(() => setActiveTheme(saved));
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(() => {
+    const isStandalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      window.matchMedia("(display-mode: fullscreen)").matches ||
+      Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone);
+
+    if (isStandalone) {
+      document.body.dataset.mundialStandalone = "true";
+    }
+
+    return () => {
+      delete document.body.dataset.mundialStandalone;
+    };
   }, []);
 
   function handleThemeChange(theme: ThemeId) {
     setActiveTheme(theme);
-    localStorage.setItem("mundial-theme", theme);
+    localStorage.setItem(THEME_STORAGE_KEY, theme);
   }
 
   useEffect(() => {
@@ -498,7 +527,6 @@ export function MundialApp() {
       controller.abort();
       window.clearInterval(interval);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshTick]);
 
   function handleRefresh() {
@@ -510,6 +538,20 @@ export function MundialApp() {
   const venues = useMemo(() => buildVenueStats(matches), [matches]);
   const groupCards = useMemo(() => buildGroupCards(matches), [matches]);
   const knockoutRounds = useMemo(() => buildKnockoutRounds(matches), [matches]);
+  const stageFilterOptions = useMemo(
+    () => [
+      { key: "todos" as StageFilter, label: "Todo" },
+      ...groupCards.map((group) => ({
+        key: `group:${group.group}` as StageFilter,
+        label: groupShortName(group.group),
+      })),
+      ...knockoutRounds.map((round) => ({
+        key: `round:${round.round}` as StageFilter,
+        label: roundLabels[round.round] ?? round.round,
+      })),
+    ],
+    [groupCards, knockoutRounds],
+  );
   const groupOptions = useMemo(
     () => Array.from(new Set(matches.filter(isGroupMatch).map((match) => match.group!))),
     [matches],
@@ -534,9 +576,22 @@ export function MundialApp() {
     return matchesQuery && matchesGroup && matchesStatus;
   });
 
+  const visibleGroupCards =
+    stageFilter === "todos"
+      ? groupCards
+      : stageFilter.startsWith("group:")
+        ? groupCards.filter((group) => group.group === stageFilter.slice("group:".length))
+        : [];
+  const visibleKnockoutRounds =
+    stageFilter === "todos"
+      ? knockoutRounds
+      : stageFilter.startsWith("round:")
+        ? knockoutRounds.filter((round) => round.round === stageFilter.slice("round:".length))
+        : [];
+
   return (
     <div
-      className="min-h-screen bg-[var(--wc-page-bg)] text-[var(--wc-text)]"
+      className="mundial-app-shell min-h-screen bg-[var(--wc-page-bg)] text-[var(--wc-text)]"
       style={themes[activeTheme] as React.CSSProperties}
     >
       {/* Hero */}
@@ -556,10 +611,8 @@ export function MundialApp() {
                 <span>🏆</span>
                 <span>FIFA World Cup 2026</span>
               </p>
-              <h1 className="mt-2 text-4xl font-black leading-[1.05] sm:mt-4 sm:text-5xl lg:text-6xl">
-                MUNDIAL
-                <br />
-                2026
+              <h1 className="mt-2 whitespace-nowrap text-4xl font-black leading-[1.05] sm:mt-4 sm:text-5xl lg:text-6xl">
+                MUNDIAL 2026
               </h1>
               <p className="mt-2 hidden max-w-2xl text-base leading-7 text-[var(--wc-hero-soft)] sm:mt-4 sm:block">
                 Calendario, horarios en España, resultados y clasificaciones.
@@ -695,18 +748,39 @@ export function MundialApp() {
 
         {activeTab === "faseGrupos" ? (
           <>
-            <section className="mt-6 grid gap-5 xl:grid-cols-2">
-              {groupCards.map((group) => (
-                <GroupFixtureCard
-                  key={group.group}
-                  group={group.group}
-                  teams={group.teams}
-                  matches={group.matches}
-                />
-              ))}
-            </section>
+            <div className="mt-6 overflow-x-auto rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] p-2 shadow-sm">
+              <div className="flex min-w-max gap-2">
+                {stageFilterOptions.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() => setStageFilter(option.key)}
+                    className={`focus-ring min-h-9 rounded-md px-3 text-sm font-bold transition ${
+                      stageFilter === option.key
+                        ? "bg-[var(--wc-accent)] text-[var(--wc-accent-fg)]"
+                        : "bg-[var(--wc-panel-bg)] text-[var(--wc-muted)] hover:text-[var(--wc-text)]"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-            {knockoutRounds.length > 0 ? (
+            {visibleGroupCards.length > 0 ? (
+              <section className="mt-5 grid gap-5 xl:grid-cols-2">
+                {visibleGroupCards.map((group) => (
+                  <GroupFixtureCard
+                    key={group.group}
+                    group={group.group}
+                    teams={group.teams}
+                    matches={group.matches}
+                  />
+                ))}
+              </section>
+            ) : null}
+
+            {visibleKnockoutRounds.length > 0 ? (
               <section className="mt-10">
                 <div className="mb-5 flex items-center gap-3 border-b border-[var(--wc-border)] pb-4">
                   <span className="text-2xl">🏆</span>
@@ -715,7 +789,7 @@ export function MundialApp() {
                   </h2>
                 </div>
                 <div className="grid gap-4 lg:grid-cols-2">
-                  {knockoutRounds.map((r) => (
+                  {visibleKnockoutRounds.map((r) => (
                     <KnockoutRoundCard key={r.round} round={r.round} matches={r.matches} />
                   ))}
                 </div>

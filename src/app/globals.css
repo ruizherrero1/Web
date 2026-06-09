@@ -78,3 +78,23 @@ a:not([class]) {
   animation-timeline: view();
   animation-range: entry 0% entry 25%;
 }
+
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  body:has(.mundial-app-shell) > header,
+  body:has(.mundial-app-shell) > footer {
+    display: none;
+  }
+
+  body:has(.mundial-app-shell) main {
+    min-height: 100vh;
+  }
+}
+
+body[data-mundial-standalone="true"] > header,
+body[data-mundial-standalone="true"] > footer {
+  display: none;
+}
+
+body[data-mundial-standalone="true"] main {
+  min-height: 100vh;
+}

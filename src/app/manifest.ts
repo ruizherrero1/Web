@@ -9,8 +9,8 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: "/apps/mundial",
     scope: "/apps/mundial",
     display: "standalone",
-    background_color: "#0d1b2a",
-    theme_color: "#0d1b2a",
+    background_color: "#0a0e0f",
+    theme_color: "#0a0e0f",
     orientation: "portrait",
     icons: [
       {
