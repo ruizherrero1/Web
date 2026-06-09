@@ -7,37 +7,50 @@ export default function Icon() {
   return new ImageResponse(
     <div
       style={{
-        background: "linear-gradient(160deg, #0d1b2a 0%, #1a3a5f 100%)",
         width: "100%",
         height: "100%",
         display: "flex",
         flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
       }}
     >
-      <div
-        style={{
-          color: "#dc2626",
-          fontSize: "100px",
-          fontWeight: 900,
-          lineHeight: "1",
-          letterSpacing: "-4px",
-        }}
-      >
-        M
+      {/* Spanish flag — red / yellow / red */}
+      <div style={{ height: "60%", display: "flex", flexDirection: "column" }}>
+        <div style={{ background: "#c60b1e", flex: 1 }} />
+        <div style={{ background: "#ffc400", flex: 2 }} />
+        <div style={{ background: "#c60b1e", flex: 1 }} />
       </div>
+      {/* Text strip */}
       <div
         style={{
-          color: "#ffffff",
-          fontSize: "38px",
-          fontWeight: 700,
-          lineHeight: "1",
-          letterSpacing: "8px",
-          marginLeft: "8px",
+          height: "40%",
+          background: "#0d1b2a",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
         }}
       >
-        26
+        <div
+          style={{
+            color: "#ffffff",
+            fontSize: "28px",
+            fontWeight: 900,
+            lineHeight: "1",
+            letterSpacing: "2px",
+          }}
+        >
+          MUNDIAL
+        </div>
+        <div
+          style={{
+            color: "#ffc400",
+            fontSize: "22px",
+            fontWeight: 700,
+            lineHeight: "1.2",
+          }}
+        >
+          2026
+        </div>
       </div>
     </div>,
     { ...size },
