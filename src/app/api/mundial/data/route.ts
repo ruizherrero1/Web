@@ -27,6 +27,7 @@ type AppMatch = {
   team2: string;
   group?: string;
   ground?: string;
+  matchStatus?: string;
   score?: AppScore;
 };
 
@@ -170,6 +171,7 @@ function normalizeFootballDataMatch(match: FootballDataMatch): AppMatch {
     team2: normalizeTeam(match.awayTeam),
     group: normalizeGroup(match.group),
     ground: match.venue ?? undefined,
+    matchStatus: match.status,
     score: normalizeScore(match),
   };
 }

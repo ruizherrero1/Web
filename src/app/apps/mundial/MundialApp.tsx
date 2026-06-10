@@ -14,7 +14,7 @@ const SPAIN_TEAM = "Spain";
 type ThemeId = "fifa" | "night" | "northamerica";
 type TabId = "calendario" | "faseGrupos" | "clasificacion" | "sedes";
 type StageFilter = `group:${string}` | `round:${string}` | "todos";
-type MatchStatus = "finished" | "awaitingResult" | "upcoming";
+type MatchStatus = "finished" | "live" | "awaitingResult" | "upcoming";
 
 type Score = {
   ft?: [number, number];
@@ -32,6 +32,7 @@ type RawMatch = {
   team2: string;
   group?: string;
   ground?: string;
+  matchStatus?: string;
   score?: Score;
 };
 
@@ -266,6 +267,17 @@ function formatLongMadridDate(date: Date) {
 }
 
 function getStatus(match: RawMatch, startsAt: Date): MatchStatus {
+  if (
+    match.matchStatus &&
+    ["IN_PLAY", "PAUSED", "EXTRA_TIME", "PENALTY_SHOOTOUT"].includes(match.matchStatus)
+  ) {
+    return "live";
+  }
+
+  if (match.matchStatus && ["FINISHED", "AWARDED"].includes(match.matchStatus)) {
+    return "finished";
+  }
+
   if (match.score?.ft) return "finished";
   return startsAt.getTime() < Date.now() ? "awaitingResult" : "upcoming";
 }
@@ -277,7 +289,20 @@ function scoreLabel(score?: Score) {
     : score.et
       ? " prórroga"
       : "";
-  return `${score.ft[0]}-${score.ft[1]}${suffix}`;
+  return `${score.ft[0]} - ${score.ft[1]}${suffix}`;
+}
+
+function matchScoreLabel(match: EnrichedMatch) {
+  const score = scoreLabel(match.score);
+  if (score) {
+    return score;
+  }
+
+  if (match.status === "live") {
+    return "0 - 0";
+  }
+
+  return "- vs -";
 }
 
 function groupShortName(group?: string) {
@@ -1006,8 +1031,17 @@ function GroupBadge({ group }: { group?: string }) {
   );
 }
 
+function LiveBadge() {
+  return (
+    <span className="inline-flex min-h-7 items-center gap-1.5 rounded-md border border-red-500/25 bg-red-500/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-red-500">
+      <span className="h-1.5 w-1.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.85)]" />
+      Live
+    </span>
+  );
+}
+
 function MatchRow({ match }: { match: EnrichedMatch }) {
-  const score = scoreLabel(match.score);
+  const score = matchScoreLabel(match);
 
   return (
     <article className="rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] p-3 shadow-sm transition hover:border-[var(--wc-accent)]">
@@ -1019,14 +1053,17 @@ function MatchRow({ match }: { match: EnrichedMatch }) {
           <span className="text-[var(--wc-muted)]">·</span>
           <span className="text-[var(--wc-muted)]">{formatMadridTime(match.startsAt)}</span>
         </div>
-        <GroupBadge group={match.group} />
+        <div className="flex shrink-0 items-center gap-1.5">
+          {match.status === "live" ? <LiveBadge /> : null}
+          <GroupBadge group={match.group} />
+        </div>
       </div>
       <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
         <div className="min-w-0 text-right text-[13px] font-bold text-[var(--wc-text)] sm:text-sm">
           <TeamLabel team={match.team1} align="right" />
         </div>
         <div className="shrink-0 rounded bg-[var(--wc-score-bg)] px-2 py-1 text-xs font-black text-[var(--wc-score-text)] sm:px-2.5">
-          {score ?? "vs"}
+          {score}
         </div>
         <div className="min-w-0 text-[13px] font-bold text-[var(--wc-text)] sm:text-sm">
           <TeamLabel team={match.team2} />
@@ -1100,7 +1137,7 @@ function KnockoutRoundCard({
 }
 
 function MiniMatchRow({ match }: { match: EnrichedMatch }) {
-  const score = scoreLabel(match.score);
+  const score = matchScoreLabel(match);
 
   return (
     <div className="px-4 py-3">
@@ -1116,13 +1153,14 @@ function MiniMatchRow({ match }: { match: EnrichedMatch }) {
             <span>{match.ground}</span>
           </>
         ) : null}
+        {match.status === "live" ? <LiveBadge /> : null}
       </div>
       <div className="mt-1.5 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
         <div className="min-w-0 text-right text-[11px] font-bold text-[var(--wc-text)] sm:text-xs">
           <TeamLabel team={match.team1} compact align="right" />
         </div>
         <div className="shrink-0 rounded bg-[var(--wc-score-bg)] px-1.5 py-1 text-[11px] font-black text-[var(--wc-score-text)] sm:px-2 sm:text-xs">
-          {score ?? "vs"}
+          {score}
         </div>
         <div className="min-w-0 text-[11px] font-bold text-[var(--wc-text)] sm:text-xs">
           <TeamLabel team={match.team2} compact />
