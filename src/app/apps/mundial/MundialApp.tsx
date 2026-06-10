@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/Badge";
 
-const DATA_URL =
-  process.env.NEXT_PUBLIC_WORLD_CUP_DATA_URL ??
+const DATA_URL = process.env.NEXT_PUBLIC_WORLD_CUP_DATA_URL ?? "/api/mundial/data";
+const OPENFOOTBALL_FALLBACK_URL =
   "https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json";
 
 const MADRID_TIME_ZONE = "Europe/Madrid";
@@ -499,10 +499,18 @@ export function MundialApp() {
     async function loadData() {
       setIsLoading(true);
       try {
-        const response = await fetch(DATA_URL, {
+        let response = await fetch(DATA_URL, {
           cache: "no-store",
           signal: controller.signal,
         });
+
+        if (!response.ok && DATA_URL !== OPENFOOTBALL_FALLBACK_URL) {
+          response = await fetch(OPENFOOTBALL_FALLBACK_URL, {
+            cache: "no-store",
+            signal: controller.signal,
+          });
+        }
+
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const nextData = (await response.json()) as TournamentData;
         if (mounted) {
@@ -524,7 +532,7 @@ export function MundialApp() {
       controller.abort();
       controller = new AbortController();
       loadData();
-    }, 300_000);
+    }, 120_000);
 
     return () => {
       mounted = false;
