@@ -160,8 +160,8 @@ const roundLabels: Record<string, string> = {
 const teamInfo: Record<string, TeamInfo> = {
   Mexico: { name: "México", countryCode: "mx" },
   "South Africa": { name: "Sudáfrica", countryCode: "za" },
-  "South Korea": { name: "Corea del Sur", countryCode: "kr" },
-  "Czech Republic": { name: "República Checa", countryCode: "cz" },
+  "South Korea": { name: "Corea Sur", countryCode: "kr" },
+  "Czech Republic": { name: "Rep. Checa", countryCode: "cz" },
   Canada: { name: "Canadá", countryCode: "ca" },
   "Bosnia & Herzegovina": { name: "Bosnia y Herz.", countryCode: "ba" },
   Qatar: { name: "Catar", countryCode: "qa" },
@@ -170,22 +170,22 @@ const teamInfo: Record<string, TeamInfo> = {
   Morocco: { name: "Marruecos", countryCode: "ma" },
   Haiti: { name: "Haití", countryCode: "ht" },
   Scotland: { name: "Escocia", countryCode: "gb-sct" },
-  USA: { name: "Estados Unidos", countryCode: "us" },
+  USA: { name: "EE. UU.", countryCode: "us" },
   Paraguay: { name: "Paraguay", countryCode: "py" },
   Australia: { name: "Australia", countryCode: "au" },
   Turkey: { name: "Turquía", countryCode: "tr" },
   Germany: { name: "Alemania", countryCode: "de" },
   "Curaçao": { name: "Curazao", countryCode: "cw" },
-  "Ivory Coast": { name: "Costa de Marfil", countryCode: "ci" },
+  "Ivory Coast": { name: "C. de Marfil", countryCode: "ci" },
   Ecuador: { name: "Ecuador", countryCode: "ec" },
-  Netherlands: { name: "Países Bajos", countryCode: "nl" },
+  Netherlands: { name: "P. Bajos", countryCode: "nl" },
   Japan: { name: "Japón", countryCode: "jp" },
   Sweden: { name: "Suecia", countryCode: "se" },
   Tunisia: { name: "Túnez", countryCode: "tn" },
   Belgium: { name: "Bélgica", countryCode: "be" },
   Egypt: { name: "Egipto", countryCode: "eg" },
   Iran: { name: "Irán", countryCode: "ir" },
-  "New Zealand": { name: "Nueva Zelanda", countryCode: "nz" },
+  "New Zealand": { name: "N. Zelanda", countryCode: "nz" },
   Spain: { name: "España", countryCode: "es" },
   "Cape Verde": { name: "Cabo Verde", countryCode: "cv" },
   "Saudi Arabia": { name: "Arabia Saudí", countryCode: "sa" },
@@ -954,7 +954,7 @@ function TeamLabel({
 
   return (
     <span
-      className={`inline-flex min-w-0 items-center gap-2 ${
+      className={`inline-flex min-w-0 max-w-full items-center gap-1.5 whitespace-nowrap ${
         align === "right" ? "justify-end" : ""
       }`}
     >
@@ -968,7 +968,7 @@ function TeamLabel({
           className="shrink-0 rounded-[1px] object-cover"
         />
       ) : null}
-      <span className="min-w-0">{info.name}</span>
+      <span className="min-w-0 truncate">{info.name}</span>
     </span>
   );
 }
@@ -1021,14 +1021,14 @@ function MatchRow({ match }: { match: EnrichedMatch }) {
         </div>
         <GroupBadge group={match.group} />
       </div>
-      <div className="mt-2 flex items-center gap-2">
-        <div className="min-w-0 flex-1 text-right text-sm font-bold text-[var(--wc-text)]">
+      <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
+        <div className="min-w-0 text-right text-[13px] font-bold text-[var(--wc-text)] sm:text-sm">
           <TeamLabel team={match.team1} align="right" />
         </div>
-        <div className="shrink-0 rounded bg-[var(--wc-score-bg)] px-2.5 py-1 text-xs font-black text-[var(--wc-score-text)]">
+        <div className="shrink-0 rounded bg-[var(--wc-score-bg)] px-2 py-1 text-xs font-black text-[var(--wc-score-text)] sm:px-2.5">
           {score ?? "vs"}
         </div>
-        <div className="min-w-0 flex-1 text-sm font-bold text-[var(--wc-text)]">
+        <div className="min-w-0 text-[13px] font-bold text-[var(--wc-text)] sm:text-sm">
           <TeamLabel team={match.team2} />
         </div>
       </div>
@@ -1058,7 +1058,7 @@ function GroupFixtureCard({
           {teams.map((team) => (
             <div
               key={team}
-              className="rounded-md border border-white/15 bg-white/[0.08] px-3 py-2 text-sm font-semibold"
+              className="min-w-0 rounded-md border border-white/15 bg-white/[0.08] px-2.5 py-2 text-xs font-semibold sm:px-3 sm:text-sm"
             >
               <TeamLabel team={team} compact />
             </div>
@@ -1117,14 +1117,14 @@ function MiniMatchRow({ match }: { match: EnrichedMatch }) {
           </>
         ) : null}
       </div>
-      <div className="mt-1.5 flex items-center gap-2">
-        <div className="min-w-0 flex-1 text-right text-xs font-bold text-[var(--wc-text)]">
+      <div className="mt-1.5 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
+        <div className="min-w-0 text-right text-[11px] font-bold text-[var(--wc-text)] sm:text-xs">
           <TeamLabel team={match.team1} compact align="right" />
         </div>
-        <div className="shrink-0 rounded bg-[var(--wc-score-bg)] px-2 py-1 text-xs font-black text-[var(--wc-score-text)]">
+        <div className="shrink-0 rounded bg-[var(--wc-score-bg)] px-1.5 py-1 text-[11px] font-black text-[var(--wc-score-text)] sm:px-2 sm:text-xs">
           {score ?? "vs"}
         </div>
-        <div className="min-w-0 flex-1 text-xs font-bold text-[var(--wc-text)]">
+        <div className="min-w-0 text-[11px] font-bold text-[var(--wc-text)] sm:text-xs">
           <TeamLabel team={match.team2} compact />
         </div>
       </div>
@@ -1156,7 +1156,7 @@ function GroupTable({ group, teams }: { group: string; teams: Standing[] }) {
           <tbody className="divide-y divide-[var(--wc-border-inner)]">
             {teams.map((team, index) => (
               <tr key={team.team} className={index < 2 ? "bg-[var(--wc-row-hl)]" : undefined}>
-                <td className="px-2 py-2 font-bold text-[var(--wc-text)] sm:px-4 sm:py-3">
+                <td className="min-w-0 px-2 py-2 font-bold text-[var(--wc-text)] sm:px-4 sm:py-3">
                   <span className="mr-1 inline-flex h-5 w-5 items-center justify-center rounded bg-[var(--wc-panel-bg)] text-[10px] text-[var(--wc-muted)] sm:mr-2 sm:h-6 sm:w-6 sm:text-xs">
                     {index + 1}
                   </span>
