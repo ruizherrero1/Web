@@ -12,7 +12,7 @@ const THEME_STORAGE_KEY = "mundial-theme-v2";
 const SPAIN_TEAM = "Spain";
 
 type ThemeId = "fifa" | "night" | "northamerica";
-type TabId = "calendario" | "faseGrupos" | "clasificacion" | "sedes";
+type TabId = "calendario" | "faseGrupos" | "clasificacion";
 type StageFilter = `group:${string}` | `round:${string}` | "todos";
 type MatchStatus = "finished" | "live" | "awaitingResult" | "upcoming";
 
@@ -401,21 +401,6 @@ function buildStandings(matches: EnrichedMatch[]) {
     .sort((a, b) => a.group.localeCompare(b.group));
 }
 
-function buildVenueStats(matches: EnrichedMatch[]) {
-  const venues = new Map<string, { name: string; matches: number; next?: EnrichedMatch }>();
-
-  for (const match of matches) {
-    if (!match.ground) continue;
-    const venue = venues.get(match.ground) ?? { name: match.ground, matches: 0, next: undefined };
-    venue.matches += 1;
-    if (match.status !== "finished" && (!venue.next || match.timestamp < venue.next.timestamp)) {
-      venue.next = match;
-    }
-    venues.set(match.ground, venue);
-  }
-
-  return Array.from(venues.values()).sort((a, b) => b.matches - a.matches);
-}
 
 function buildGroupCards(matches: EnrichedMatch[]) {
   const groups = new Map<
@@ -520,6 +505,7 @@ export function MundialApp() {
   useEffect(() => {
     let mounted = true;
     let controller = new AbortController();
+    let timeoutId: number | undefined;
 
     async function loadData() {
       setIsLoading(true);
@@ -543,26 +529,42 @@ export function MundialApp() {
           setUpdatedAt(new Date());
           setError(null);
           setIsLoading(false);
+          // Polling adaptativo — seguro en el tier gratuito: el CDN de Vercel absorbe
+          // las peticiones de los clientes (Cache-Control: max-age=30), así que
+          // football-data.org recibe como máximo ~2 req/min, muy por debajo del límite de 10.
+          const today = new Date().toISOString().slice(0, 10);
+          const hasLive = nextData.matches.some((m) =>
+            ["IN_PLAY", "PAUSED", "EXTRA_TIME", "PENALTY_SHOOTOUT"].includes(m.matchStatus ?? ""),
+          );
+          const hasMatchToday = nextData.matches.some((m) => m.date === today);
+          // Live: 60 s · Partido hoy: 3 min · Sin partido: 15 min
+          const delay = hasLive ? 60_000 : hasMatchToday ? 3 * 60_000 : 15 * 60_000;
+          timeoutId = window.setTimeout(() => {
+            controller.abort();
+            controller = new AbortController();
+            loadData();
+          }, delay);
         }
       } catch (nextError) {
         if (mounted && !(nextError instanceof DOMException)) {
           setError("No se han podido cargar los datos del calendario.");
           setIsLoading(false);
+          // Reintento tras error: 2 min
+          timeoutId = window.setTimeout(() => {
+            controller.abort();
+            controller = new AbortController();
+            loadData();
+          }, 2 * 60_000);
         }
       }
     }
 
     loadData();
-    const interval = window.setInterval(() => {
-      controller.abort();
-      controller = new AbortController();
-      loadData();
-    }, 120_000);
 
     return () => {
       mounted = false;
       controller.abort();
-      window.clearInterval(interval);
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
     };
   }, [refreshTick]);
 
@@ -572,7 +574,6 @@ export function MundialApp() {
 
   const matches = useMemo(() => enrichMatches(data?.matches ?? []), [data]);
   const groups = useMemo(() => buildStandings(matches), [matches]);
-  const venues = useMemo(() => buildVenueStats(matches), [matches]);
   const groupCards = useMemo(() => buildGroupCards(matches), [matches]);
   const knockoutRounds = useMemo(() => buildKnockoutRounds(matches), [matches]);
   const stageFilterOptions = useMemo(
@@ -594,7 +595,10 @@ export function MundialApp() {
     [matches],
   );
 
+  const liveMatch = matches.find((match) => match.status === "live");
   const nextMatch = matches.find((match) => match.status !== "finished");
+  const heroMatch = liveMatch ?? nextMatch;
+  const isHeroLive = heroMatch?.status === "live";
 
   const normalizedQuery = normalizeText(query.trim());
   const filteredMatches = matches.filter((match) => {
@@ -686,20 +690,36 @@ export function MundialApp() {
             </div>
 
             <aside className="rounded-xl border border-white/15 bg-white/[0.08] p-5 shadow-2xl shadow-black/20">
-              <p className="text-sm font-semibold text-[var(--wc-hero-label)]">Próximo partido</p>
-              {nextMatch ? (
+              <p className="flex items-center gap-2 text-sm font-semibold text-[var(--wc-hero-label)]">
+                {isHeroLive ? (
+                  <>
+                    <span className="relative flex h-2.5 w-2.5 shrink-0">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+                      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
+                    </span>
+                    En directo
+                  </>
+                ) : "Próximo partido"}
+              </p>
+              {heroMatch ? (
                 <div className="mt-4">
                   <div className="flex flex-wrap items-center gap-2 text-lg font-bold">
-                    <TeamLabel team={nextMatch.team1} />
-                    <span className="text-sm font-bold text-[var(--wc-hero-label)]">vs</span>
-                    <TeamLabel team={nextMatch.team2} />
+                    <TeamLabel team={heroMatch.team1} />
+                    {isHeroLive ? (
+                      <span className="shrink-0 rounded bg-[var(--wc-score-bg)] px-2.5 py-1 text-sm font-black text-[var(--wc-score-text)]">
+                        {matchScoreLabel(heroMatch)}
+                      </span>
+                    ) : (
+                      <span className="text-sm font-bold text-[var(--wc-hero-label)]">vs</span>
+                    )}
+                    <TeamLabel team={heroMatch.team2} />
                   </div>
                   <p className="mt-3 text-sm text-[var(--wc-hero-soft)]">
-                    {formatLongMadridDate(nextMatch.startsAt)} ·{" "}
-                    {formatMadridTime(nextMatch.startsAt)}
+                    {formatLongMadridDate(heroMatch.startsAt)} ·{" "}
+                    {formatMadridTime(heroMatch.startsAt)}
                   </p>
                   <p className="mt-2 text-sm text-[var(--wc-hero-soft)]">
-                    {groupShortName(nextMatch.group)} · {nextMatch.ground}
+                    {groupShortName(heroMatch.group)} · {heroMatch.ground}
                   </p>
                 </div>
               ) : (
@@ -852,42 +872,9 @@ export function MundialApp() {
           </section>
         ) : null}
 
-        {activeTab === "sedes" ? (
-          <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {venues.map((venue) => (
-              <article
-                key={venue.name}
-                className="rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] p-5 shadow-sm"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <h2 className="text-lg font-bold text-[var(--wc-text)]">{venue.name}</h2>
-                  <Badge>{`${venue.matches} partidos`}</Badge>
-                </div>
-                {venue.next ? (
-                  <div className="mt-5 rounded-md bg-[var(--wc-venue-hl)] p-4 text-sm text-[var(--wc-venue-hl-text)]">
-                    <p className="flex flex-wrap items-center gap-2 font-bold">
-                      <TeamLabel team={venue.next.team1} compact />
-                      <span>vs</span>
-                      <TeamLabel team={venue.next.team2} compact />
-                    </p>
-                    <p className="mt-2">
-                      {formatMadridDate(venue.next.startsAt)} ·{" "}
-                      {formatMadridTime(venue.next.startsAt)}
-                    </p>
-                  </div>
-                ) : (
-                  <p className="mt-5 text-sm text-[var(--wc-muted)]">
-                    Sin partidos pendientes en la fuente actual.
-                  </p>
-                )}
-              </article>
-            ))}
-          </section>
-        ) : null}
 
         <p className="mt-8 text-xs leading-5 text-[var(--wc-muted)]">
-          Fuente configurable: openfootball/worldcup.json. La clasificación se recalcula en el
-          navegador usando los marcadores disponibles en el JSON.
+          Datos: football-data.org · openfootball/worldcup.json
         </p>
       </div>
     </div>
@@ -1123,7 +1110,7 @@ function KnockoutRoundCard({
     <article className="overflow-hidden rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] shadow-sm">
       <div className="border-b border-[var(--wc-border)] bg-[var(--wc-card-header)] px-4 py-4 text-white">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-lg font-bold">{round}</h3>
+          <h3 className="text-lg font-bold">{roundLabels[round] ?? round}</h3>
           <Badge>{`${matches.length} ${matches.length === 1 ? "partido" : "partidos"}`}</Badge>
         </div>
       </div>
