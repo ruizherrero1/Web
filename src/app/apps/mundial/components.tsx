@@ -1,6 +1,9 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
+import { Tv } from "lucide-react";
 import { Badge } from "@/components/Badge";
+import { getBroadcastChannels } from "./broadcast";
 import {
   formatMadridDate,
   formatMadridTime,
@@ -133,6 +136,77 @@ export function GroupBadge({ group }: { group?: string }) {
   );
 }
 
+export function BroadcastButton({ match }: { match: EnrichedMatch }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handlePointerDown(event: PointerEvent) {
+      if (!wrapRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <span ref={wrapRef} className="relative inline-flex">
+      <button
+        type="button"
+        title="Dónde verlo en España"
+        aria-label={`Dónde ver ${match.team1} contra ${match.team2} en España`}
+        aria-expanded={open}
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen((value) => !value);
+        }}
+        className="focus-ring inline-flex min-h-7 items-center justify-center rounded-md border border-[var(--wc-border)] bg-[var(--wc-panel-bg)] px-2 py-1 text-[var(--wc-muted)] transition hover:border-[var(--wc-accent)] hover:text-[var(--wc-accent)]"
+      >
+        <Tv className="size-3.5" />
+      </button>
+
+      {open ? (
+        <div className="absolute right-0 top-full z-30 mt-2 w-64 rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] p-3 text-left shadow-xl shadow-black/30">
+          <p className="mb-2 text-[10px] font-black uppercase tracking-[0.12em] text-[var(--wc-muted)]">
+            Dónde verlo (España)
+          </p>
+          <ul className="space-y-2">
+            {getBroadcastChannels(match).map((channel) => (
+              <li key={channel.name}>
+                <a
+                  href={channel.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`focus-ring block rounded-md px-2 py-1.5 transition hover:bg-[var(--wc-panel-bg)] ${channel.unconfirmed ? "opacity-70" : ""}`}
+                >
+                  <span className="flex items-center gap-1.5 text-xs font-bold text-[var(--wc-text)]">
+                    {channel.name}
+                    {channel.free ? (
+                      <span className="rounded bg-[var(--wc-score-bg)] px-1.5 py-0.5 text-[9px] font-black uppercase text-[var(--wc-score-text)]">
+                        Gratis
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className="mt-0.5 block text-[11px] leading-4 text-[var(--wc-muted)]">
+                    {channel.detail}
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </span>
+  );
+}
+
 export function LiveBadge() {
   return (
     <span className="inline-flex min-h-7 items-center gap-1.5 rounded-md border border-red-500/25 bg-red-500/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-red-500">
@@ -158,6 +232,7 @@ export function MatchRow({ match }: { match: EnrichedMatch }) {
         <div className="flex shrink-0 items-center gap-1.5">
           {match.status === "live" ? <LiveBadge /> : null}
           <GroupBadge group={match.group} />
+          <BroadcastButton match={match} />
         </div>
       </div>
       <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
@@ -243,7 +318,7 @@ export function MiniMatchRow({ match }: { match: EnrichedMatch }) {
 
   return (
     <div className="px-4 py-3">
-      <div className="flex flex-wrap items-center gap-x-1.5 text-xs text-[var(--wc-muted)]">
+      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-[var(--wc-muted)]">
         <span className="font-semibold capitalize text-[var(--wc-text)]">
           {formatMadridDate(match.startsAt)}
         </span>
@@ -256,6 +331,9 @@ export function MiniMatchRow({ match }: { match: EnrichedMatch }) {
           </>
         ) : null}
         {match.status === "live" ? <LiveBadge /> : null}
+        <span className="ml-auto">
+          <BroadcastButton match={match} />
+        </span>
       </div>
       <div className="mt-1.5 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
         <div className="min-w-0 text-right text-[11px] font-bold text-[var(--wc-text)] sm:text-xs">
