@@ -13,7 +13,7 @@ export const LINKS = {
   secondaryEmail: "mailto:ruizherrero1@gmail.com",
   companyEmail: "mailto:ramon.ruiz@stratosdc.es",
   phone: "tel:+34649925463",
-  cvPdf: "/cv-ramon-ruiz-herrero.pdf",
+  cvPdf: "/ramonruiz_cv.pdf",
   gymLog: "https://gym.ramonruizherrero.com/",
 };
 
