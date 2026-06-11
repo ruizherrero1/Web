@@ -31,8 +31,8 @@ export const apps = [
     name: "Recetario",
     slug: "recetas",
     description:
-      "Recetas estructuradas, variantes, favoritos y futuras listas de compra.",
-    status: "En desarrollo",
+      "Recetas compartidas por recetarios familiares, con modo cocina e importación.",
+    status: "Activo",
     access: "Invitación",
     href: "/apps/recetas",
     focus: "Organización personal",

@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import { ButtonLink } from "@/components/ButtonLink";
 import { PageShell } from "@/components/PageShell";
+import { LINKS } from "@/lib/constants";
 
 export const metadata: Metadata = {
   title: "Recetario",
@@ -28,9 +30,9 @@ const future = [
 export default function RecipesPage() {
   return (
     <PageShell
-      eyebrow="Aplicación en desarrollo"
+      eyebrow="Aplicación activa"
       title="Recetario"
-      description="Aplicación para guardar recetas personales en formato estructurado, con ingredientes, pasos, variantes y etiquetas."
+      description="Aplicación para guardar y compartir recetas por recetarios familiares: cada grupo accede por invitación y ve solo sus recetas, con modo cocina, importación y PDF."
     >
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)] p-6">
@@ -51,6 +53,11 @@ export default function RecipesPage() {
             ))}
           </ul>
         </section>
+      </div>
+      <div className="mt-8">
+        <ButtonLink href={LINKS.recetario} variant="primary">
+          Entrar en Recetario
+        </ButtonLink>
       </div>
     </PageShell>
   );
