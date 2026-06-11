@@ -1,6 +1,13 @@
+import type { Metadata } from "next";
 import { ButtonLink } from "@/components/ButtonLink";
 import { PageShell } from "@/components/PageShell";
 import { LINKS } from "@/lib/constants";
+
+export const metadata: Metadata = {
+  title: "CV",
+  description:
+    "CV de Ramón Ruiz Herrero: CEO y Partner de Stratos Consulting, consultor tecno-financiero especializado en mercados, Murex, Calypso, integraciones y producto.",
+};
 
 const areas = [
   "Mercados financieros",
@@ -63,7 +70,7 @@ export default function CvPage() {
           dirección de proyectos y creación de herramientas digitales.
         </p>
       </section>
-      <section className="mt-6 rounded-lg border border-[var(--line)] bg-white p-6">
+      <section className="mt-6 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-6">
         <h2 className="text-xl font-bold text-[var(--ink)]">Experiencia</h2>
         <div className="mt-5 grid gap-4">
           {experience.map((item) => (
@@ -87,7 +94,7 @@ export default function CvPage() {
         </div>
       </section>
       <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
-        <section className="mt-6 rounded-lg border border-[var(--line)] bg-white p-6 lg:mt-6">
+        <section className="mt-6 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-6 lg:mt-6">
           <h2 className="text-xl font-bold text-[var(--ink)]">
             Áreas de especialidad
           </h2>
@@ -97,7 +104,7 @@ export default function CvPage() {
             ))}
           </ul>
         </section>
-        <section className="mt-6 rounded-lg border border-[var(--line)] bg-white p-6 lg:mt-6">
+        <section className="mt-6 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-6 lg:mt-6">
           <h2 className="text-xl font-bold text-[var(--ink)]">
             Tecnologías y herramientas
           </h2>
@@ -108,7 +115,7 @@ export default function CvPage() {
           </ul>
         </section>
       </div>
-      <section className="mt-6 rounded-lg border border-[var(--line)] bg-white p-6">
+      <section className="mt-6 rounded-lg border border-[var(--line)] bg-[var(--surface)] p-6">
         <h2 className="text-xl font-bold text-[var(--ink)]">Proyectos</h2>
         <p className="mt-4 max-w-3xl text-[var(--muted)]">
           Portal personal, GymLog, Recetario, TravelKit y FinanceLab como base
