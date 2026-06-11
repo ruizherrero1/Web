@@ -1,6 +1,13 @@
+import type { Metadata } from "next";
 import { ButtonLink } from "@/components/ButtonLink";
 import { PageShell } from "@/components/PageShell";
 import { CONTACT, LINKS } from "@/lib/constants";
+
+export const metadata: Metadata = {
+  title: "Contacto",
+  description:
+    "Contacta con Ramón Ruiz Herrero para proyectos, colaboraciones o consultas profesionales.",
+};
 
 export default function ContactPage() {
   return (
@@ -11,28 +18,28 @@ export default function ContactPage() {
     >
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <a
-          className="focus-ring rounded-lg border border-[var(--line)] bg-white p-5 transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]"
+          className="focus-ring rounded-lg border border-[var(--line)] bg-[var(--surface)] p-5 transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]"
           href={LINKS.companyEmail}
         >
           <p className="text-sm font-semibold text-[var(--accent-dark)]">Email empresa</p>
           <p className="mt-2 font-bold text-[var(--ink)]">{CONTACT.companyEmail}</p>
         </a>
         <a
-          className="focus-ring rounded-lg border border-[var(--line)] bg-white p-5 transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]"
+          className="focus-ring rounded-lg border border-[var(--line)] bg-[var(--surface)] p-5 transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]"
           href={LINKS.email}
         >
           <p className="text-sm font-semibold text-[var(--accent-dark)]">Email personal</p>
           <p className="mt-2 font-bold text-[var(--ink)]">{CONTACT.primaryEmail}</p>
         </a>
         <a
-          className="focus-ring rounded-lg border border-[var(--line)] bg-white p-5 transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]"
+          className="focus-ring rounded-lg border border-[var(--line)] bg-[var(--surface)] p-5 transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]"
           href={LINKS.secondaryEmail}
         >
           <p className="text-sm font-semibold text-[var(--accent-dark)]">Email alternativo</p>
           <p className="mt-2 font-bold text-[var(--ink)]">{CONTACT.secondaryEmail}</p>
         </a>
         <a
-          className="focus-ring rounded-lg border border-[var(--line)] bg-white p-5 transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]"
+          className="focus-ring rounded-lg border border-[var(--line)] bg-[var(--surface)] p-5 transition hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]"
           href={LINKS.phone}
         >
           <p className="text-sm font-semibold text-[var(--accent-dark)]">Teléfono</p>

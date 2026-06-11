@@ -1,7 +1,14 @@
+import type { Metadata } from "next";
 import { AppCard } from "@/components/AppCard";
 import { Badge } from "@/components/Badge";
 import { PageShell } from "@/components/PageShell";
 import { apps } from "@/data/apps";
+
+export const metadata: Metadata = {
+  title: "Apps",
+  description:
+    "Catálogo de aplicaciones personales: GymLog, Recetario, Mundial 2026 y futuras herramientas privadas.",
+};
 
 const filters = ["Todas", "Activas", "En desarrollo", "Privadas", "Públicas"];
 
