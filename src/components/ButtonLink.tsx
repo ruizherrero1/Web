@@ -8,11 +8,11 @@ type ButtonLinkProps = {
 
 const variants = {
   primary:
-    "bg-[var(--accent-dark)] text-white border-[var(--accent-dark)] hover:bg-[var(--accent)]",
+    "bg-[var(--accent-strong)] text-[var(--on-accent)] border-[var(--accent-strong)] hover:bg-[var(--accent)]",
   secondary:
-    "bg-white text-[var(--ink)] border-[var(--line)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]",
+    "bg-[var(--surface)] text-[var(--ink)] border-[var(--line)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]",
   ghost:
-    "bg-transparent text-[var(--accent-dark)] border-transparent hover:bg-white/70",
+    "bg-transparent text-[var(--accent-dark)] border-transparent hover:bg-[var(--surface-strong)]",
 };
 
 export function ButtonLink({

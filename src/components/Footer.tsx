@@ -3,7 +3,7 @@ import { CONTACT, LINKS, SITE } from "@/lib/constants";
 
 export function Footer() {
   return (
-    <footer className="border-t border-[var(--line)] bg-white/70">
+    <footer className="border-t border-[var(--line)] bg-[var(--chrome-bg)]">
       <div className="container-shell flex flex-col gap-4 py-8 text-sm text-[var(--muted)] sm:flex-row sm:items-center sm:justify-between">
         <p>© {new Date().getFullYear()} {SITE.name}</p>
         <div className="flex flex-wrap gap-4">
