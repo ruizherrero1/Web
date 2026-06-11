@@ -1,0 +1,337 @@
+import type {
+  EnrichedMatch,
+  MatchStatus,
+  RawMatch,
+  Score,
+  Standing,
+  TeamInfo,
+} from "./types";
+
+export const MADRID_TIME_ZONE = "Europe/Madrid";
+export const SPAIN_TEAM = "Spain";
+
+export const roundLabels: Record<string, string> = {
+  "Round of 32": "Dieciseisavos",
+  "Round of 16": "Octavos",
+  "Quarter-finals": "Cuartos",
+  "Quarter-finals 1": "Cuartos",
+  "Semi-finals": "Semis",
+  "Semi-finals 1": "Semis",
+  "Third-place match": "3er puesto",
+  "Third-place play-off": "3er puesto",
+  Final: "Final",
+};
+
+const teamInfo: Record<string, TeamInfo> = {
+  Mexico: { name: "México", countryCode: "mx" },
+  "South Africa": { name: "Sudáfrica", countryCode: "za" },
+  "South Korea": { name: "Corea Sur", countryCode: "kr" },
+  "Czech Republic": { name: "Rep. Checa", countryCode: "cz" },
+  Canada: { name: "Canadá", countryCode: "ca" },
+  "Bosnia & Herzegovina": { name: "Bosnia y Herz.", countryCode: "ba" },
+  Qatar: { name: "Catar", countryCode: "qa" },
+  Switzerland: { name: "Suiza", countryCode: "ch" },
+  Brazil: { name: "Brasil", countryCode: "br" },
+  Morocco: { name: "Marruecos", countryCode: "ma" },
+  Haiti: { name: "Haití", countryCode: "ht" },
+  Scotland: { name: "Escocia", countryCode: "gb-sct" },
+  USA: { name: "EE. UU.", countryCode: "us" },
+  Paraguay: { name: "Paraguay", countryCode: "py" },
+  Australia: { name: "Australia", countryCode: "au" },
+  Turkey: { name: "Turquía", countryCode: "tr" },
+  Germany: { name: "Alemania", countryCode: "de" },
+  "Curaçao": { name: "Curazao", countryCode: "cw" },
+  "Ivory Coast": { name: "C. de Marfil", countryCode: "ci" },
+  Ecuador: { name: "Ecuador", countryCode: "ec" },
+  Netherlands: { name: "P. Bajos", countryCode: "nl" },
+  Japan: { name: "Japón", countryCode: "jp" },
+  Sweden: { name: "Suecia", countryCode: "se" },
+  Tunisia: { name: "Túnez", countryCode: "tn" },
+  Belgium: { name: "Bélgica", countryCode: "be" },
+  Egypt: { name: "Egipto", countryCode: "eg" },
+  Iran: { name: "Irán", countryCode: "ir" },
+  "New Zealand": { name: "N. Zelanda", countryCode: "nz" },
+  Spain: { name: "España", countryCode: "es" },
+  "Cape Verde": { name: "Cabo Verde", countryCode: "cv" },
+  "Saudi Arabia": { name: "Arabia Saudí", countryCode: "sa" },
+  Uruguay: { name: "Uruguay", countryCode: "uy" },
+  France: { name: "Francia", countryCode: "fr" },
+  Senegal: { name: "Senegal", countryCode: "sn" },
+  Iraq: { name: "Irak", countryCode: "iq" },
+  Norway: { name: "Noruega", countryCode: "no" },
+  Argentina: { name: "Argentina", countryCode: "ar" },
+  Algeria: { name: "Argelia", countryCode: "dz" },
+  Austria: { name: "Austria", countryCode: "at" },
+  Jordan: { name: "Jordania", countryCode: "jo" },
+  Portugal: { name: "Portugal", countryCode: "pt" },
+  "DR Congo": { name: "R. D. Congo", countryCode: "cd" },
+  Uzbekistan: { name: "Uzbekistán", countryCode: "uz" },
+  Colombia: { name: "Colombia", countryCode: "co" },
+  England: { name: "Inglaterra", countryCode: "gb-eng" },
+  Croatia: { name: "Croacia", countryCode: "hr" },
+  Ghana: { name: "Ghana", countryCode: "gh" },
+  Panama: { name: "Panamá", countryCode: "pa" },
+};
+
+export function getTeamInfo(team: string): TeamInfo {
+  return teamInfo[team] ?? { name: team };
+}
+
+export function displayTeamName(team: string) {
+  return getTeamInfo(team).name;
+}
+
+export function parseKickoff(date: string, time?: string) {
+  const [year, month, day] = date.split("-").map(Number);
+  const match = time?.match(
+    /^(\d{1,2}):(\d{2})(?:\s+UTC([+-]\d{1,2})(?::?(\d{2}))?)?$/,
+  );
+
+  if (!match) {
+    return new Date(Date.UTC(year, month - 1, day, 12, 0));
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  const offsetHours = match[3] ? Number(match[3]) : 0;
+  const offsetMinutes = match[4] ? Number(match[4]) : 0;
+  const offsetSign = match[3]?.startsWith("-") ? -1 : 1;
+  const offset = offsetHours * 60 + offsetSign * offsetMinutes;
+
+  return new Date(
+    Date.UTC(year, month - 1, day, hours, minutes) - offset * 60_000,
+  );
+}
+
+export function formatMadridDate(date: Date) {
+  return new Intl.DateTimeFormat("es-ES", {
+    weekday: "short",
+    day: "2-digit",
+    month: "short",
+    timeZone: MADRID_TIME_ZONE,
+  }).format(date);
+}
+
+export function formatMadridTime(date: Date) {
+  return new Intl.DateTimeFormat("es-ES", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: MADRID_TIME_ZONE,
+    timeZoneName: "short",
+  }).format(date);
+}
+
+export function formatLongMadridDate(date: Date) {
+  return new Intl.DateTimeFormat("es-ES", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    timeZone: MADRID_TIME_ZONE,
+  }).format(date);
+}
+
+export function getStatus(match: RawMatch, startsAt: Date): MatchStatus {
+  if (
+    match.matchStatus &&
+    ["IN_PLAY", "PAUSED", "EXTRA_TIME", "PENALTY_SHOOTOUT"].includes(match.matchStatus)
+  ) {
+    return "live";
+  }
+
+  if (match.matchStatus && ["FINISHED", "AWARDED"].includes(match.matchStatus)) {
+    return "finished";
+  }
+
+  if (match.score?.ft) return "finished";
+  return startsAt.getTime() < Date.now() ? "awaitingResult" : "upcoming";
+}
+
+export function scoreLabel(score?: Score) {
+  if (!score?.ft) return null;
+  const suffix = score.p
+    ? ` pen. ${score.p[0]}-${score.p[1]}`
+    : score.et
+      ? " prórroga"
+      : "";
+  return `${score.ft[0]} - ${score.ft[1]}${suffix}`;
+}
+
+export function matchScoreLabel(match: EnrichedMatch) {
+  const score = scoreLabel(match.score);
+  if (score) {
+    return score;
+  }
+
+  if (match.status === "live") {
+    return "0 - 0";
+  }
+
+  return "- vs -";
+}
+
+export function groupShortName(group?: string) {
+  return group?.replace("Group", "Grupo") ?? "Eliminatorias";
+}
+
+export function normalizeText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase();
+}
+
+export function enrichMatches(matches: RawMatch[]): EnrichedMatch[] {
+  return matches
+    .map((match, index) => {
+      const startsAt = parseKickoff(match.date, match.time);
+      return {
+        ...match,
+        id: `${match.date}-${match.round}-${match.team1}-${match.team2}-${index}`,
+        startsAt,
+        timestamp: startsAt.getTime(),
+        status: getStatus(match, startsAt),
+      };
+    })
+    .sort((a, b) => a.timestamp - b.timestamp);
+}
+
+function createStanding(team: string): Standing {
+  return {
+    team,
+    played: 0,
+    wins: 0,
+    draws: 0,
+    losses: 0,
+    goalsFor: 0,
+    goalsAgainst: 0,
+    goalDifference: 0,
+    points: 0,
+  };
+}
+
+export function buildStandings(matches: EnrichedMatch[]) {
+  const groups = new Map<string, Map<string, Standing>>();
+
+  for (const match of matches) {
+    if (!match.group) continue;
+    if (!groups.has(match.group)) groups.set(match.group, new Map());
+
+    const group = groups.get(match.group)!;
+    group.set(match.team1, group.get(match.team1) ?? createStanding(match.team1));
+    group.set(match.team2, group.get(match.team2) ?? createStanding(match.team2));
+
+    if (!match.score?.ft) continue;
+
+    const [homeGoals, awayGoals] = match.score.ft;
+    const home = group.get(match.team1)!;
+    const away = group.get(match.team2)!;
+
+    home.played += 1;
+    away.played += 1;
+    home.goalsFor += homeGoals;
+    home.goalsAgainst += awayGoals;
+    away.goalsFor += awayGoals;
+    away.goalsAgainst += homeGoals;
+
+    if (homeGoals > awayGoals) {
+      home.wins += 1;
+      away.losses += 1;
+      home.points += 3;
+    } else if (awayGoals > homeGoals) {
+      away.wins += 1;
+      home.losses += 1;
+      away.points += 3;
+    } else {
+      home.draws += 1;
+      away.draws += 1;
+      home.points += 1;
+      away.points += 1;
+    }
+  }
+
+  return Array.from(groups.entries())
+    .map(([group, standings]) => ({
+      group,
+      teams: Array.from(standings.values())
+        .map((team) => ({ ...team, goalDifference: team.goalsFor - team.goalsAgainst }))
+        .sort(
+          (a, b) =>
+            b.points - a.points ||
+            b.goalDifference - a.goalDifference ||
+            b.goalsFor - a.goalsFor ||
+            a.team.localeCompare(b.team),
+        ),
+    }))
+    .sort((a, b) => a.group.localeCompare(b.group));
+}
+
+export function buildGroupCards(matches: EnrichedMatch[]) {
+  const groups = new Map<
+    string,
+    { group: string; teams: Set<string>; matches: EnrichedMatch[] }
+  >();
+
+  for (const match of matches) {
+    if (!match.group) continue;
+    const group = groups.get(match.group) ?? {
+      group: match.group,
+      teams: new Set<string>(),
+      matches: [],
+    };
+    group.teams.add(match.team1);
+    group.teams.add(match.team2);
+    group.matches.push(match);
+    groups.set(match.group, group);
+  }
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      group: group.group,
+      teams: Array.from(group.teams).sort((a, b) =>
+        displayTeamName(a).localeCompare(displayTeamName(b), "es"),
+      ),
+      matches: group.matches.sort((a, b) => a.timestamp - b.timestamp),
+    }))
+    .sort((a, b) => a.group.localeCompare(b.group));
+}
+
+export function buildKnockoutRounds(matches: EnrichedMatch[]) {
+  const roundMap = new Map<string, EnrichedMatch[]>();
+
+  for (const match of matches) {
+    if (match.group) continue;
+    const existing = roundMap.get(match.round) ?? [];
+    existing.push(match);
+    roundMap.set(match.round, existing);
+  }
+
+  return Array.from(roundMap.entries())
+    .map(([round, roundMatches]) => ({
+      round,
+      matches: roundMatches.sort((a, b) => a.timestamp - b.timestamp),
+      firstTs: roundMatches.reduce((min, m) => Math.min(min, m.timestamp), Infinity),
+    }))
+    .sort((a, b) => a.firstTs - b.firstTs);
+}
+
+export function groupMatchesByDay(
+  matches: EnrichedMatch[],
+): { date: string; matches: EnrichedMatch[] }[] {
+  const groups = new Map<string, EnrichedMatch[]>();
+  for (const match of matches) {
+    const existing = groups.get(match.date) ?? [];
+    existing.push(match);
+    groups.set(match.date, existing);
+  }
+  return Array.from(groups.entries())
+    .map(([date, dayMatches]) => ({ date, matches: dayMatches }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+export function isGroupMatch(match: EnrichedMatch) {
+  return Boolean(match.group);
+}
+
+export function isTeamMatch(match: EnrichedMatch, team: string) {
+  return match.team1 === team || match.team2 === team;
+}
