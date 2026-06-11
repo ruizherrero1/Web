@@ -28,3 +28,6 @@ dev-server.log
 
 # typescript
 *.tsbuildinfo
+
+# Config local de herramientas
+.claude/
