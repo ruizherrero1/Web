@@ -8,10 +8,10 @@ type BadgeProps = {
 export function Badge({ children, tone = "neutral" }: BadgeProps) {
   const toneClass =
     tone === "status"
-      ? "border-emerald-800/20 bg-[rgba(6,95,70,0.08)] text-emerald-950"
+      ? "border-[var(--badge-status-border)] bg-[var(--badge-status-bg)] text-[var(--badge-status-fg)]"
       : tone === "access"
-        ? "border-cyan-900/20 bg-[rgba(22,78,99,0.08)] text-cyan-950"
-        : "border-[rgba(24,24,27,0.12)] bg-white text-zinc-700";
+        ? "border-[var(--badge-access-border)] bg-[var(--badge-access-bg)] text-[var(--badge-access-fg)]"
+        : "border-[var(--badge-neutral-border)] bg-[var(--badge-neutral-bg)] text-[var(--badge-neutral-fg)]";
 
   return (
     <span

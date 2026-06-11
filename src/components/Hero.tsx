@@ -19,7 +19,7 @@ const focusLines = [
 export function Hero() {
   return (
     <section className="container-shell flex min-h-[calc(100vh-72px)] flex-col justify-center py-14">
-      <div className="grid gap-12 lg:grid-cols-[1fr_auto] lg:items-center">
+      <div className="grid gap-12 lg:items-center">
         <div className="max-w-2xl">
           <p className="mb-4 text-xs font-bold uppercase tracking-[0.16em] text-[var(--accent-dark)]">
             Portfolio, proyectos y herramientas personales
@@ -43,15 +43,6 @@ export function Hero() {
             <ButtonLink href="/contacto" variant="ghost">
               Contacto
             </ButtonLink>
-          </div>
-        </div>
-
-        <div className="relative hidden lg:flex lg:items-center lg:justify-center">
-          <div className="absolute size-72 rounded-full bg-gradient-to-br from-[var(--accent)]/20 to-[var(--accent-soft)] blur-2xl" />
-          <div className="relative size-56 overflow-hidden rounded-full border-4 border-[var(--accent)]/20 bg-[var(--surface-strong)] shadow-xl ring-1 ring-[var(--accent)]/10">
-            <div className="flex size-full items-center justify-center text-5xl font-bold text-[var(--accent)]">
-              RR
-            </div>
           </div>
         </div>
       </div>

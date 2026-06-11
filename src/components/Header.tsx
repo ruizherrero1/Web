@@ -6,13 +6,12 @@ const navItems = [
   { href: "/", label: "Inicio" },
   { href: "/apps", label: "Apps" },
   { href: "/cv", label: "CV" },
-  { href: "/contacto", label: "Contacto" },
   { href: "/privado", label: "Privado" },
 ];
 
 export function Header() {
   return (
-    <header className="sticky top-0 z-40 border-b border-black/5 bg-white/86 backdrop-blur">
+    <header className="sticky top-0 z-40 border-b border-[var(--line)] bg-[var(--chrome-bg)] backdrop-blur">
       <div className="container-shell flex min-h-12 flex-row items-center justify-between gap-3 py-1.5 sm:min-h-16 sm:py-3">
         <Link className="focus-ring group inline-flex w-fit shrink-0 flex-col" href="/">
           <span className="text-sm font-bold text-[var(--ink)]">
@@ -26,7 +25,7 @@ export function Header() {
               {navItems.map((item) => (
                 <li key={item.href} className="shrink-0">
                   <Link
-                    className="focus-ring inline-flex min-h-8 items-center rounded-md px-2 text-xs font-semibold text-[var(--muted)] transition hover:bg-white hover:text-[var(--ink)] sm:min-h-9 sm:px-3 sm:text-sm"
+                    className="focus-ring inline-flex min-h-8 items-center rounded-md px-2 text-xs font-semibold text-[var(--muted)] transition hover:bg-[var(--surface)] hover:text-[var(--ink)] sm:min-h-9 sm:px-3 sm:text-sm"
                     href={item.href}
                   >
                     {item.label}
