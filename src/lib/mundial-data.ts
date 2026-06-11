@@ -5,6 +5,8 @@ const OPENFOOTBALL_URL =
   "https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json";
 const FOOTBALL_DATA_MATCHES_URL =
   "https://api.football-data.org/v4/competitions/WC/matches";
+const ESPN_SCOREBOARD_URL =
+  "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=2026&limit=200";
 
 type ScoreTuple = [number, number];
 
@@ -40,6 +42,37 @@ type FootballDataMatch = {
 
 type FootballDataResponse = {
   matches?: FootballDataMatch[];
+};
+
+type EspnCompetitor = {
+  homeAway?: "home" | "away";
+  score?: string;
+  team?: {
+    displayName?: string | null;
+    shortDisplayName?: string | null;
+  };
+};
+
+type EspnEvent = {
+  id?: string;
+  date: string;
+  status?: {
+    type?: {
+      name?: string;
+      state?: "pre" | "in" | "post";
+      completed?: boolean;
+    };
+  };
+  competitions?: Array<{
+    competitors?: EspnCompetitor[];
+    venue?: {
+      fullName?: string | null;
+    };
+  }>;
+};
+
+type EspnResponse = {
+  events?: EspnEvent[];
 };
 
 const teamAliases: Record<string, string> = {
@@ -139,28 +172,146 @@ function normalizeFootballDataMatch(match: FootballDataMatch): RawMatch {
   };
 }
 
-function matchKey(match: RawMatch) {
-  const teams = [match.team1, match.team2].sort().join("|");
-  return `${match.date}|${teams}`;
+function normalizeEspnStatus(event: EspnEvent) {
+  const type = event.status?.type;
+  const name = type?.name ?? "";
+
+  if (type?.completed || type?.state === "post") {
+    return "FINISHED";
+  }
+
+  if (type?.state !== "in") {
+    return "SCHEDULED";
+  }
+
+  if (name.includes("HALFTIME")) return "PAUSED";
+  if (name.includes("EXTRA_TIME")) return "EXTRA_TIME";
+  if (name.includes("PENALTY")) return "PENALTY_SHOOTOUT";
+  return "IN_PLAY";
 }
 
-function mergeMatches(baseMatches: RawMatch[], liveMatches: RawMatch[]) {
-  const byKey = new Map(baseMatches.map((match) => [matchKey(match), match]));
+function normalizeEspnTeam(competitor?: EspnCompetitor) {
+  const name =
+    competitor?.team?.displayName ??
+    competitor?.team?.shortDisplayName ??
+    "TBD";
+  return teamAliases[name] ?? name;
+}
+
+function normalizeEspnMatch(event: EspnEvent): RawMatch | null {
+  const competition = event.competitions?.[0];
+  const home = competition?.competitors?.find(
+    (competitor) => competitor.homeAway === "home",
+  );
+  const away = competition?.competitors?.find(
+    (competitor) => competitor.homeAway === "away",
+  );
+
+  if (!home || !away) return null;
+
+  const kickoff = new Date(event.date);
+  if (Number.isNaN(kickoff.getTime())) return null;
+
+  const matchStatus = normalizeEspnStatus(event);
+  const homeScore = Number(home.score);
+  const awayScore = Number(away.score);
+  const hasScore =
+    matchStatus !== "SCHEDULED" &&
+    Number.isFinite(homeScore) &&
+    Number.isFinite(awayScore);
+
+  return {
+    round: "Match",
+    num: event.id ? Number(event.id) : undefined,
+    date: kickoff.toISOString().slice(0, 10),
+    time: `${kickoff.toISOString().slice(11, 16)} UTC+0`,
+    team1: normalizeEspnTeam(home),
+    team2: normalizeEspnTeam(away),
+    ground: competition?.venue?.fullName ?? undefined,
+    matchStatus,
+    score: hasScore ? { ft: [homeScore, awayScore] } : undefined,
+  };
+}
+
+function teamsKey(match: RawMatch) {
+  return [match.team1, match.team2].sort().join("|");
+}
+
+function dateDistance(first: RawMatch, second: RawMatch) {
+  return Math.abs(
+    new Date(`${first.date}T12:00:00Z`).getTime() -
+      new Date(`${second.date}T12:00:00Z`).getTime(),
+  );
+}
+
+function kickoffTimestamp(match: RawMatch) {
+  const time = match.time?.match(
+    /^(\d{1,2}):(\d{2})(?:\s+UTC([+-]\d{1,2})(?::?(\d{2}))?)?$/,
+  );
+
+  if (!time) return Number.NaN;
+
+  const [year, month, day] = match.date.split("-").map(Number);
+  const hours = Number(time[1]);
+  const minutes = Number(time[2]);
+  const offsetHours = time[3] ? Number(time[3]) : 0;
+  const offsetMinutes = time[4] ? Number(time[4]) : 0;
+  const offsetSign = time[3]?.startsWith("-") ? -1 : 1;
+  const offset = offsetHours * 60 + offsetSign * offsetMinutes;
+
+  return Date.UTC(year, month - 1, day, hours, minutes) - offset * 60_000;
+}
+
+function mergeMatches(
+  baseMatches: RawMatch[],
+  liveMatches: RawMatch[],
+  appendUnmatched = true,
+) {
+  const mergedMatches = [...baseMatches];
 
   for (const liveMatch of liveMatches) {
-    const key = matchKey(liveMatch);
-    const baseMatch = byKey.get(key);
-
-    byKey.set(key, {
+    const candidates = mergedMatches
+      .map((match, index) => ({ match, index }))
+      .filter(({ match }) => teamsKey(match) === teamsKey(liveMatch))
+      .sort(
+        (first, second) =>
+          dateDistance(first.match, liveMatch) -
+          dateDistance(second.match, liveMatch),
+      );
+    const liveKickoff = kickoffTimestamp(liveMatch);
+    const kickoffCandidates = Number.isNaN(liveKickoff)
+      ? []
+      : mergedMatches
+          .map((match, index) => ({ match, index }))
+          .filter(({ match }) => {
+            const kickoff = kickoffTimestamp(match);
+            return (
+              !Number.isNaN(kickoff) &&
+              Math.abs(kickoff - liveKickoff) <= 5 * 60 * 1000
+            );
+          });
+    const closest =
+      candidates[0] ??
+      (kickoffCandidates.length === 1 ? kickoffCandidates[0] : undefined);
+    const matchesExisting =
+      closest && dateDistance(closest.match, liveMatch) <= 24 * 60 * 60 * 1000;
+    const baseMatch = matchesExisting ? closest.match : undefined;
+    const nextMatch = {
       ...(baseMatch ?? liveMatch),
       ...liveMatch,
       round: baseMatch?.round ?? liveMatch.round,
       group: baseMatch?.group ?? liveMatch.group,
       ground: liveMatch.ground ?? baseMatch?.ground,
-    });
+    };
+
+    if (matchesExisting) {
+      mergedMatches[closest.index] = nextMatch;
+    } else if (appendUnmatched) {
+      mergedMatches.push(nextMatch);
+    }
   }
 
-  return Array.from(byKey.values()).sort((a, b) => {
+  return mergedMatches.sort((a, b) => {
     const first = `${a.date} ${a.time ?? ""}`;
     const second = `${b.date} ${b.time ?? ""}`;
     return first.localeCompare(second);
@@ -205,9 +356,25 @@ async function fetchFootballData(): Promise<RawMatch[]> {
   return (data.matches ?? []).map(normalizeFootballDataMatch);
 }
 
+async function fetchEspnScores(): Promise<RawMatch[]> {
+  const response = await fetch(ESPN_SCOREBOARD_URL, {
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`ESPN HTTP ${response.status}`);
+  }
+
+  const data = (await response.json()) as EspnResponse;
+  return (data.events ?? [])
+    .map(normalizeEspnMatch)
+    .filter((match): match is RawMatch => match !== null);
+}
+
 async function buildTournamentData(): Promise<TournamentData> {
   let baseData: TournamentData | null = null;
-  let liveMatches: RawMatch[] = [];
+  let footballDataMatches: RawMatch[] = [];
+  let espnMatches: RawMatch[] = [];
 
   try {
     baseData = await fetchOpenFootball();
@@ -216,25 +383,40 @@ async function buildTournamentData(): Promise<TournamentData> {
   }
 
   try {
-    liveMatches = await fetchFootballData();
+    footballDataMatches = await fetchFootballData();
   } catch (error) {
     console.warn("[mundial] football-data.org unavailable:", error);
   }
 
-  if (baseData && liveMatches.length > 0) {
+  try {
+    espnMatches = await fetchEspnScores();
+  } catch (error) {
+    console.warn("[mundial] ESPN unavailable:", error);
+  }
+
+  const providerMatches =
+    footballDataMatches.length > 0
+      ? mergeMatches(footballDataMatches, espnMatches, false)
+      : espnMatches;
+  const providerSources = [
+    espnMatches.length > 0 ? "espn" : null,
+    footballDataMatches.length > 0 ? "football-data.org" : null,
+  ].filter((source): source is string => source !== null);
+
+  if (baseData && providerMatches.length > 0) {
     return {
       ...baseData,
-      matches: mergeMatches(baseData.matches, liveMatches),
-      source: "football-data.org+openfootball",
+      matches: mergeMatches(baseData.matches, providerMatches, false),
+      source: [...providerSources, "openfootball"].join("+"),
       generatedAt: new Date().toISOString(),
     };
   }
 
-  if (liveMatches.length > 0) {
+  if (providerMatches.length > 0) {
     return {
       name: "World Cup 2026",
-      matches: liveMatches,
-      source: "football-data.org",
+      matches: providerMatches,
+      source: providerSources.join("+"),
       generatedAt: new Date().toISOString(),
     };
   }
@@ -248,9 +430,10 @@ async function buildTournamentData(): Promise<TournamentData> {
 
 // Cache compartido entre lambdas y cold starts (Next data cache), a diferencia
 // del cache en memoria anterior que se perdia en cada instancia de Vercel.
-// 90s mantiene a football-data.org muy por debajo de su limite de 10 req/min.
+// 45s mantiene a football-data.org por debajo de su limite de 10 req/min y
+// permite que el polling de 60s reciba un marcador nuevo en cada vuelta.
 export const getTournamentData = unstable_cache(
   buildTournamentData,
-  ["mundial-tournament-data"],
-  { revalidate: 90 },
+  ["mundial-tournament-data-v4"],
+  { revalidate: 45 },
 );

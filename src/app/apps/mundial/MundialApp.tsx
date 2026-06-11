@@ -116,16 +116,15 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
           setUpdatedAt(new Date());
           setError(null);
           setIsLoading(false);
-          // Polling adaptativo — seguro en el tier gratuito: el CDN de Vercel absorbe
-          // las peticiones de los clientes (Cache-Control: max-age=30), así que
-          // football-data.org recibe como máximo ~2 req/min, muy por debajo del límite de 10.
+          // El cache compartido del servidor evita que cada cliente consulte
+          // directamente a los proveedores de resultados.
           const today = new Date().toISOString().slice(0, 10);
           const hasLive = nextData.matches.some((m) =>
             ["IN_PLAY", "PAUSED", "EXTRA_TIME", "PENALTY_SHOOTOUT"].includes(m.matchStatus ?? ""),
           );
           const hasMatchToday = nextData.matches.some((m) => m.date === today);
-          // Live: 60 s · Partido hoy: 3 min · Sin partido: 15 min
-          const delay = hasLive ? 60_000 : hasMatchToday ? 3 * 60_000 : 15 * 60_000;
+          // Live o dia de partido: 60 s. Sin partido: 15 min.
+          const delay = hasLive || hasMatchToday ? 60_000 : 15 * 60_000;
           timeoutId = window.setTimeout(() => {
             controller.abort();
             controller = new AbortController();
