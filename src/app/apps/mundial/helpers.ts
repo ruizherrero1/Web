@@ -13,12 +13,15 @@ export const SPAIN_TEAM = "Spain";
 export const roundLabels: Record<string, string> = {
   "Round of 32": "Dieciseisavos",
   "Round of 16": "Octavos",
+  "Quarter-final": "Cuartos",
   "Quarter-finals": "Cuartos",
   "Quarter-finals 1": "Cuartos",
+  "Semi-final": "Semis",
   "Semi-finals": "Semis",
   "Semi-finals 1": "Semis",
   "Third-place match": "3er puesto",
   "Third-place play-off": "3er puesto",
+  "Match for third place": "3er puesto",
   Final: "Final",
 };
 
@@ -171,6 +174,18 @@ export function matchScoreLabel(match: EnrichedMatch) {
 
 export function groupShortName(group?: string) {
   return group?.replace("Group", "Grupo") ?? "Eliminatorias";
+}
+
+// Minuto de juego para partidos en directo: usa el de la API si llega y, si
+// no, lo estima desde la hora de inicio (con ~ para indicar aproximacion).
+export function liveMinuteLabel(match: EnrichedMatch) {
+  if (match.status !== "live") return "";
+  if (match.matchStatus === "PAUSED") return "Descanso";
+  if (match.matchStatus === "PENALTY_SHOOTOUT") return "Penaltis";
+  if (typeof match.minute === "number" && match.minute > 0) return `${match.minute}'`;
+  const elapsed = Math.floor((Date.now() - match.timestamp) / 60_000);
+  if (elapsed < 1) return "1'";
+  return `~${Math.min(elapsed, 130)}'`;
 }
 
 export function normalizeText(value: string) {

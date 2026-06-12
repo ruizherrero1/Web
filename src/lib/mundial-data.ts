@@ -1,5 +1,5 @@
 import { unstable_cache } from "next/cache";
-import type { RawMatch, Score, TournamentData } from "@/app/apps/mundial/types";
+import type { RawMatch, Score, Scorer, TournamentData } from "@/app/apps/mundial/types";
 
 const OPENFOOTBALL_URL =
   "https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json";
@@ -7,6 +7,8 @@ const FOOTBALL_DATA_MATCHES_URL =
   "https://api.football-data.org/v4/competitions/WC/matches";
 const ESPN_SCOREBOARD_URL =
   "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=2026&limit=200";
+const FOOTBALL_DATA_SCORERS_URL =
+  "https://api.football-data.org/v4/competitions/WC/scorers?limit=25";
 
 type ScoreTuple = [number, number];
 
@@ -28,6 +30,7 @@ type FootballDataMatch = {
   stage?: string | null;
   group?: string | null;
   matchday?: number | null;
+  minute?: number | null;
   homeTeam: FootballDataTeam;
   awayTeam: FootballDataTeam;
   score?: {
@@ -168,6 +171,7 @@ function normalizeFootballDataMatch(match: FootballDataMatch): RawMatch {
     group: normalizeGroup(match.group),
     ground: match.venue ?? undefined,
     matchStatus: match.status,
+    minute: typeof match.minute === "number" ? match.minute : undefined,
     score: normalizeScore(match),
   };
 }
@@ -436,4 +440,52 @@ export const getTournamentData = unstable_cache(
   buildTournamentData,
   ["mundial-tournament-data-v4"],
   { revalidate: 45 },
+);
+
+type FootballDataScorer = {
+  player?: { name?: string | null };
+  team?: FootballDataTeam;
+  goals?: number | null;
+  assists?: number | null;
+  penalties?: number | null;
+};
+
+async function fetchScorers(): Promise<Scorer[]> {
+  const apiKey = process.env.FOOTBALL_DATA_API_KEY;
+  if (!apiKey) {
+    return [];
+  }
+
+  const response = await fetch(FOOTBALL_DATA_SCORERS_URL, {
+    headers: { "X-Auth-Token": apiKey },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`football-data.org scorers HTTP ${response.status}`);
+  }
+
+  const data = (await response.json()) as { scorers?: FootballDataScorer[] };
+  return (data.scorers ?? [])
+    .filter((scorer) => scorer.player?.name)
+    .map((scorer) => ({
+      name: String(scorer.player?.name),
+      team: normalizeTeam(scorer.team),
+      goals: Number(scorer.goals) || 0,
+      assists: Number(scorer.assists) || 0,
+      penalties: Number(scorer.penalties) || 0,
+    }));
+}
+
+export const getTopScorers = unstable_cache(
+  async () => {
+    try {
+      return await fetchScorers();
+    } catch (error) {
+      console.warn("[mundial] scorers unavailable:", error);
+      return [];
+    }
+  },
+  ["mundial-top-scorers"],
+  { revalidate: 600 },
 );

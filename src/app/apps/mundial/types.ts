@@ -1,5 +1,5 @@
 export type ThemeId = "fifa" | "night" | "northamerica";
-export type TabId = "calendario" | "faseGrupos" | "clasificacion";
+export type TabId = "calendario" | "faseGrupos" | "clasificacion" | "goleadores";
 export type StageFilter = `group:${string}` | `round:${string}` | "todos";
 export type MatchStatus = "finished" | "live" | "awaitingResult" | "upcoming";
 
@@ -20,7 +20,16 @@ export type RawMatch = {
   group?: string;
   ground?: string;
   matchStatus?: string;
+  minute?: number;
   score?: Score;
+};
+
+export type Scorer = {
+  name: string;
+  team: string;
+  goals: number;
+  assists: number;
+  penalties: number;
 };
 
 export type TournamentData = {
