@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { KnockoutBracket } from "./Bracket";
 import {
   FlagImg,
@@ -62,6 +62,7 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
   const [spainOnly, setSpainOnly] = useState(false);
   const [scorers, setScorers] = useState<Scorer[] | null>(null);
   const [scorersError, setScorersError] = useState(false);
+  const hasAutoScrolled = useRef(false);
   // Carga perezosa de goleadores la primera vez que se abre la pestaña.
   useEffect(() => {
     if (activeTab !== "goleadores" || scorers !== null) return;
@@ -226,6 +227,29 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
     return matchesQuery && matchesGroup && matchesSpain;
   });
 
+  // Primer partido en juego o pendiente: ancla del boton "Hoy" del calendario.
+  const nextMatchId =
+    filteredMatches.find((match) => match.status === "live")?.id ??
+    filteredMatches.find((match) => match.status !== "finished")?.id;
+
+  function scrollToNextMatch() {
+    if (!nextMatchId) return;
+    document
+      .getElementById(`partido-${nextMatchId}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+
+  // Auto-scroll al proximo partido la primera vez que carga el calendario.
+  useEffect(() => {
+    if (activeTab !== "calendario" || hasAutoScrolled.current || !nextMatchId) return;
+    const element = document.getElementById(`partido-${nextMatchId}`);
+    if (element) {
+      element.scrollIntoView({ block: "center" });
+      hasAutoScrolled.current = true;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, nextMatchId]);
+
   const visibleGroupCards =
     (stageFilter === "todos"
       ? groupCards
@@ -389,6 +413,16 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
                 compact
                 onClick={() => setSpainOnly((value) => !value)}
               />
+              {nextMatchId ? (
+                <button
+                  type="button"
+                  title="Ir al proximo partido"
+                  onClick={scrollToNextMatch}
+                  className="focus-ring inline-flex min-h-9 shrink-0 items-center rounded-md bg-[var(--wc-panel-bg)] px-3 text-sm font-bold text-[var(--wc-muted)] transition hover:text-[var(--wc-text)]"
+                >
+                  Hoy
+                </button>
+              ) : null}
               <input
                 aria-label="Buscar equipo, ciudad o grupo"
                 className="min-h-9 min-w-0 flex-[1_1_150px] rounded-md border border-[var(--wc-border)] bg-[var(--wc-panel-bg)] px-3 text-sm text-[var(--wc-text)] outline-none transition focus:border-[var(--wc-accent)] focus:ring-2 focus:ring-[var(--wc-accent)]"
@@ -415,7 +449,7 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
 
             <div className="mt-4 space-y-3">
               {filteredMatches.map((match) => (
-                <MatchRow key={match.id} match={match} />
+                <MatchRow key={match.id} match={match} domId={`partido-${match.id}`} />
               ))}
             </div>
           </section>

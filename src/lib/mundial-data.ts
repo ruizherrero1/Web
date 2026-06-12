@@ -7,8 +7,6 @@ const FOOTBALL_DATA_MATCHES_URL =
   "https://api.football-data.org/v4/competitions/WC/matches";
 const ESPN_SCOREBOARD_URL =
   "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=2026&limit=200";
-const ESPN_LEADERS_URL =
-  "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/leaders";
 const FOOTBALL_DATA_SCORERS_URL =
   "https://api.football-data.org/v4/competitions/WC/scorers?limit=25";
 
@@ -53,9 +51,19 @@ type EspnCompetitor = {
   homeAway?: "home" | "away";
   score?: string;
   team?: {
+    id?: string;
     displayName?: string | null;
     shortDisplayName?: string | null;
   };
+};
+
+type EspnDetail = {
+  scoringPlay?: boolean;
+  ownGoal?: boolean;
+  penaltyKick?: boolean;
+  shootout?: boolean;
+  team?: { id?: string };
+  athletesInvolved?: Array<{ displayName?: string | null }>;
 };
 
 type EspnEvent = {
@@ -70,6 +78,7 @@ type EspnEvent = {
   };
   competitions?: Array<{
     competitors?: EspnCompetitor[];
+    details?: EspnDetail[];
     venue?: {
       fullName?: string | null;
     };
@@ -80,24 +89,6 @@ type EspnResponse = {
   events?: EspnEvent[];
 };
 
-type EspnLeaderAthlete = {
-  displayName?: string | null;
-  team?: { displayName?: string | null } | null;
-};
-
-type EspnLeaderEntry = {
-  value?: number | null;
-  athlete?: EspnLeaderAthlete | null;
-};
-
-type EspnLeadersCategory = {
-  name?: string | null;
-  leaders?: EspnLeaderEntry[] | null;
-};
-
-type EspnLeadersResponse = {
-  categories?: EspnLeadersCategory[] | null;
-};
 
 const teamAliases: Record<string, string> = {
   "Bosnia and Herzegovina": "Bosnia & Herzegovina",
@@ -471,63 +462,74 @@ type FootballDataScorer = {
   penalties?: number | null;
 };
 
+// Agrega los goles desde los "details" del scoreboard de ESPN (cada partido
+// trae sus jugadas de gol con el autor). No incluye asistencias.
 async function fetchEspnScorers(): Promise<Scorer[]> {
-  const response = await fetch(ESPN_LEADERS_URL, { cache: "no-store" });
-  if (!response.ok) throw new Error(`ESPN leaders HTTP ${response.status}`);
+  const response = await fetch(ESPN_SCOREBOARD_URL, { cache: "no-store" });
+  if (!response.ok) throw new Error(`ESPN HTTP ${response.status}`);
 
-  const data = (await response.json()) as EspnLeadersResponse;
-  const categories = data.categories ?? [];
-  const goalsCategory = categories.find(
-    (cat) => cat.name === "goals" || cat.name === "Goals",
-  );
-  if (!goalsCategory?.leaders?.length) return [];
+  const data = (await response.json()) as EspnResponse;
+  const totals = new Map<string, Scorer>();
 
-  const assistsCategory = categories.find(
-    (cat) => cat.name === "assists" || cat.name === "Assists",
-  );
-  const assistsByName = new Map<string, number>();
-  for (const entry of assistsCategory?.leaders ?? []) {
-    if (entry.athlete?.displayName) {
-      assistsByName.set(entry.athlete.displayName, entry.value ?? 0);
+  for (const event of data.events ?? []) {
+    const competition = event.competitions?.[0];
+    if (!competition?.details?.length) continue;
+
+    const teamNames = new Map<string, string>();
+    for (const competitor of competition.competitors ?? []) {
+      if (competitor.team?.id) {
+        teamNames.set(competitor.team.id, normalizeEspnTeam(competitor));
+      }
+    }
+
+    for (const detail of competition.details) {
+      if (!detail.scoringPlay || detail.ownGoal || detail.shootout) continue;
+      const name = detail.athletesInvolved?.[0]?.displayName;
+      if (!name) continue;
+
+      const team = teamNames.get(detail.team?.id ?? "") ?? "TBD";
+      const key = `${name}|${team}`;
+      const scorer = totals.get(key) ?? { name, team, goals: 0, assists: 0, penalties: 0 };
+      scorer.goals += 1;
+      if (detail.penaltyKick) scorer.penalties += 1;
+      totals.set(key, scorer);
     }
   }
 
-  return goalsCategory.leaders
-    .filter(
-      (entry): entry is EspnLeaderEntry & { athlete: EspnLeaderAthlete } =>
-        Boolean(entry.athlete?.displayName),
-    )
-    .map((entry) => {
-      const teamName = entry.athlete.team?.displayName ?? "";
-      return {
-        name: String(entry.athlete.displayName),
-        team: teamAliases[teamName] ?? (teamName || "TBD"),
-        goals: entry.value ?? 0,
-        assists: assistsByName.get(String(entry.athlete.displayName)) ?? 0,
-        penalties: 0,
-      };
-    });
+  return Array.from(totals.values()).sort(
+    (a, b) => b.goals - a.goals || a.name.localeCompare(b.name),
+  );
+}
+
+async function fetchFootballDataScorers(apiKey: string): Promise<Scorer[]> {
+  const response = await fetch(FOOTBALL_DATA_SCORERS_URL, {
+    headers: { "X-Auth-Token": apiKey },
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error(`football-data.org scorers HTTP ${response.status}`);
+  const data = (await response.json()) as { scorers?: FootballDataScorer[] };
+  return (data.scorers ?? [])
+    .filter((scorer) => scorer.player?.name)
+    .map((scorer) => ({
+      name: String(scorer.player?.name),
+      team: normalizeTeam(scorer.team),
+      goals: Number(scorer.goals) || 0,
+      assists: Number(scorer.assists) || 0,
+      penalties: Number(scorer.penalties) || 0,
+    }));
 }
 
 async function fetchScorers(): Promise<Scorer[]> {
   const apiKey = process.env.FOOTBALL_DATA_API_KEY;
   if (apiKey) {
-    const response = await fetch(FOOTBALL_DATA_SCORERS_URL, {
-      headers: { "X-Auth-Token": apiKey },
-      cache: "no-store",
-    });
-    if (!response.ok) throw new Error(`football-data.org scorers HTTP ${response.status}`);
-    const data = (await response.json()) as { scorers?: FootballDataScorer[] };
-    return (data.scorers ?? [])
-      .filter((scorer) => scorer.player?.name)
-      .map((scorer) => ({
-        name: String(scorer.player?.name),
-        team: normalizeTeam(scorer.team),
-        goals: Number(scorer.goals) || 0,
-        assists: Number(scorer.assists) || 0,
-        penalties: Number(scorer.penalties) || 0,
-      }));
+    try {
+      const scorers = await fetchFootballDataScorers(apiKey);
+      if (scorers.length > 0) return scorers;
+    } catch (error) {
+      console.warn("[mundial] football-data scorers unavailable:", error);
+    }
   }
+  // Fallback (o complemento si football-data aun no tiene datos): ESPN.
   return fetchEspnScorers();
 }
 
