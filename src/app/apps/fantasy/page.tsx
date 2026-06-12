@@ -4,9 +4,9 @@ import { PageShell } from "@/components/PageShell";
 import { LINKS } from "@/lib/constants";
 
 export const metadata: Metadata = {
-  title: "Fantasy Stratos",
+  title: "Fantasy",
   description:
-    "Fantasy Stratos: liga fantasy privada de LaLiga con mercado, alineaciones y reglas configurables.",
+    "Fantasy: liga privada de LaLiga con mercado, alineaciones y reglas configurables.",
 };
 
 const features = [
@@ -29,7 +29,7 @@ export default function FantasyPage() {
   return (
     <PageShell
       eyebrow="Aplicación en desarrollo"
-      title="Fantasy Stratos"
+      title="Fantasy"
       description="Fantasy privado de LaLiga para competir con amigos, gestionar el mercado y adaptar las reglas a vuestra liga."
     >
       <div className="grid gap-6 lg:grid-cols-2">
@@ -52,7 +52,7 @@ export default function FantasyPage() {
       </div>
       <div className="mt-8">
         <ButtonLink href={LINKS.fantasy} variant="primary">
-          Entrar en Fantasy Stratos
+          Entrar en Fantasy
         </ButtonLink>
       </div>
     </PageShell>

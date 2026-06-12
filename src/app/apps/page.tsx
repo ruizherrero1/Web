@@ -7,7 +7,7 @@ import { apps } from "@/data/apps";
 export const metadata: Metadata = {
   title: "Apps",
   description:
-    "Catálogo de aplicaciones personales: GymLog, Fantasy Stratos, Recetario, Mundial 2026 y futuras herramientas privadas.",
+    "Catálogo de aplicaciones personales: GymLog, Fantasy, Recetario, Mundial 2026 y futuras herramientas privadas.",
 };
 
 const filters = ["Todas", "Activas", "En desarrollo", "Privadas", "Públicas"];

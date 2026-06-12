@@ -28,7 +28,7 @@ export const apps = [
     focus: "Entrenamiento",
   },
   {
-    name: "Fantasy Stratos",
+    name: "Fantasy",
     slug: "fantasy",
     description:
       "Fantasy privado de LaLiga con mercado, alineaciones, clasificación y reglas configurables.",
