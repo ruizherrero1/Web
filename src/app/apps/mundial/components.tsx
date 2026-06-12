@@ -218,6 +218,10 @@ export function LiveBadge({ minute }: { minute?: string }) {
 }
 
 export function ScorersTable({ scorers }: { scorers: Scorer[] }) {
+  // Los datos de ESPN no traen asistencias: ocultamos columnas sin datos.
+  const hasAssists = scorers.some((scorer) => scorer.assists > 0);
+  const hasPenalties = scorers.some((scorer) => scorer.penalties > 0);
+
   return (
     <article className="overflow-hidden rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] shadow-sm">
       <div className="flex items-center justify-between border-b border-[var(--wc-border)] bg-[var(--wc-card-header)] px-4 py-3 text-white">
@@ -230,8 +234,12 @@ export function ScorersTable({ scorers }: { scorers: Scorer[] }) {
               <th className="px-2 py-2 sm:px-4 sm:py-3">Jugador</th>
               <th className="px-2 py-2 sm:px-4 sm:py-3">Selección</th>
               <th className="px-1.5 py-2 text-center sm:px-3 sm:py-3">Goles</th>
-              <th className="hidden px-3 py-3 text-center sm:table-cell">Penaltis</th>
-              <th className="hidden px-3 py-3 text-center sm:table-cell">Asist.</th>
+              {hasPenalties ? (
+                <th className="hidden px-3 py-3 text-center sm:table-cell">Penaltis</th>
+              ) : null}
+              {hasAssists ? (
+                <th className="hidden px-3 py-3 text-center sm:table-cell">Asist.</th>
+              ) : null}
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--wc-border-inner)]">
@@ -249,12 +257,16 @@ export function ScorersTable({ scorers }: { scorers: Scorer[] }) {
                 <td className="px-1.5 py-2 text-center text-sm font-black text-[var(--wc-accent)] sm:px-3 sm:py-3 sm:text-base">
                   {scorer.goals}
                 </td>
-                <td className="hidden px-3 py-3 text-center text-[var(--wc-muted)] sm:table-cell">
-                  {scorer.penalties}
-                </td>
-                <td className="hidden px-3 py-3 text-center text-[var(--wc-muted)] sm:table-cell">
-                  {scorer.assists}
-                </td>
+                {hasPenalties ? (
+                  <td className="hidden px-3 py-3 text-center text-[var(--wc-muted)] sm:table-cell">
+                    {scorer.penalties}
+                  </td>
+                ) : null}
+                {hasAssists ? (
+                  <td className="hidden px-3 py-3 text-center text-[var(--wc-muted)] sm:table-cell">
+                    {scorer.assists}
+                  </td>
+                ) : null}
               </tr>
             ))}
           </tbody>
@@ -264,11 +276,11 @@ export function ScorersTable({ scorers }: { scorers: Scorer[] }) {
   );
 }
 
-export function MatchRow({ match }: { match: EnrichedMatch }) {
+export function MatchRow({ match, domId }: { match: EnrichedMatch; domId?: string }) {
   const score = matchScoreLabel(match);
 
   return (
-    <article className="rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] p-3 shadow-sm transition hover:border-[var(--wc-accent)]">
+    <article id={domId} className="rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] p-3 shadow-sm transition hover:border-[var(--wc-accent)]">
       <div className="flex items-center justify-between gap-2 text-xs">
         <div className="flex items-center gap-x-2">
           <span className="font-bold capitalize text-[var(--wc-text)]">
