@@ -69,12 +69,37 @@ export const themes: Record<ThemeId, Record<string, string>> = {
     "--wc-venue-hl": "#eff6ff",
     "--wc-venue-hl-text": "#0d1b2a",
   },
+  ocean: {
+    "--wc-page-bg": "#0a1220",
+    "--wc-hero-from": "#0e2240",
+    "--wc-hero-to": "#091529",
+    "--wc-hero-border": "#1d3a60",
+    "--wc-hero-label": "#5ec8f8",
+    "--wc-hero-soft": "#a5bdd9",
+    "--wc-card-bg": "#101b30",
+    "--wc-card-header": "#13294a",
+    "--wc-panel-bg": "#16243f",
+    "--wc-accent": "#38bdf8",
+    "--wc-accent-fg": "#06182b",
+    "--wc-text": "#e4f1fd",
+    "--wc-muted": "#7a96b8",
+    "--wc-border": "#1d3a60",
+    "--wc-border-inner": "#182f4f",
+    "--wc-score-bg": "#0f2a4a",
+    "--wc-score-text": "#5ec8f8",
+    "--wc-row-hl": "#10263f",
+    "--wc-venue-hl": "#0e2240",
+    "--wc-venue-hl-text": "#e4f1fd",
+  },
 };
 
-export const themeConfigs: Record<ThemeId, { label: string; swatch: string; activeClass: string }> = {
-  fifa:         { label: "FIFA 2026",    swatch: "#c9a227", activeClass: "bg-[#c9a227] text-[#1a0505]" },
-  night:        { label: "Noche",        swatch: "#00c853", activeClass: "bg-[#00c853] text-[#050f07]" },
-  northamerica: { label: "Norteamérica", swatch: "#dc2626", activeClass: "bg-[#dc2626] text-white" },
+// El selector muestra solo la bolita de color; label queda para el tooltip
+// y el aria-label.
+export const themeConfigs: Record<ThemeId, { label: string; swatch: string }> = {
+  fifa:         { label: "FIFA 2026",    swatch: "#c9a227" },
+  night:        { label: "Noche",        swatch: "#00c853" },
+  northamerica: { label: "Norteamérica", swatch: "#dc2626" },
+  ocean:        { label: "Océano",       swatch: "#38bdf8" },
 };
 
 export const GROUP_COLORS: Record<string, { bg: string; color: string }> = {

@@ -1,4 +1,4 @@
-export type ThemeId = "fifa" | "night" | "northamerica";
+export type ThemeId = "fifa" | "night" | "northamerica" | "ocean";
 export type TabId = "calendario" | "faseGrupos" | "clasificacion" | "goleadores";
 export type StageFilter = `group:${string}` | `round:${string}` | "todos";
 export type MatchStatus = "finished" | "live" | "awaitingResult" | "upcoming";
