@@ -1,11 +1,12 @@
 import Link from "next/link";
 import type { AppItem } from "@/data/apps";
 import { Badge } from "@/components/Badge";
-import { Dumbbell, ChefHat, Plane, BarChart2 } from "lucide-react";
+import { Dumbbell, ChefHat, Plane, BarChart2, Trophy } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 const appIcons: Record<string, LucideIcon> = {
   gym: Dumbbell,
+  fantasy: Trophy,
   recetas: ChefHat,
   travelkit: Plane,
   financelab: BarChart2,
