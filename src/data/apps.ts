@@ -28,6 +28,16 @@ export const apps = [
     focus: "Entrenamiento",
   },
   {
+    name: "Fantasy Stratos",
+    slug: "fantasy",
+    description:
+      "Fantasy privado de LaLiga con mercado, alineaciones, clasificación y reglas configurables.",
+    status: "En desarrollo",
+    access: "Invitación",
+    href: "/apps/fantasy",
+    focus: "Fútbol",
+  },
+  {
     name: "Recetario",
     slug: "recetas",
     description:

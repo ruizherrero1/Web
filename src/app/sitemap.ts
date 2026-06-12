@@ -9,6 +9,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { path: "", priority: 1 },
     { path: "/apps", priority: 0.8 },
     { path: "/apps/gym", priority: 0.6 },
+    { path: "/apps/fantasy", priority: 0.7 },
     { path: "/apps/recetas", priority: 0.6 },
     { path: "/apps/mundial", priority: 0.7 },
     { path: "/cv", priority: 0.9 },

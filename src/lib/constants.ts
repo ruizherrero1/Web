@@ -15,6 +15,7 @@ export const LINKS = {
   phone: "tel:+34649925463",
   cvPdf: "/ramonruiz_cv.pdf",
   gymLog: "https://gym.ramonruizherrero.com/",
+  fantasy: "https://fantasy.ramonruizherrero.com/",
   recetario: "https://ruizherrero1.github.io/recetario/",
 };
 
