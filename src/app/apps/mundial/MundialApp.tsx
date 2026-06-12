@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { KnockoutBracket } from "./Bracket";
 import {
   FlagImg,
   GroupFixtureCard,
   GroupTable,
   KnockoutRoundCard,
   MatchRow,
+  ScorersTable,
   SpainFilterButton,
   TeamLabel,
   ThemeSelector,
@@ -23,13 +25,14 @@ import {
   groupShortName,
   isGroupMatch,
   isTeamMatch,
+  liveMinuteLabel,
   matchScoreLabel,
   normalizeText,
   displayTeamName,
   roundLabels,
 } from "./helpers";
 import { THEME_STORAGE_KEY, themes } from "./theme";
-import type { StageFilter, TabId, ThemeId, TournamentData } from "./types";
+import type { Scorer, StageFilter, TabId, ThemeId, TournamentData } from "./types";
 
 const DATA_URL = process.env.NEXT_PUBLIC_WORLD_CUP_DATA_URL ?? "/api/mundial/data";
 const OPENFOOTBALL_FALLBACK_URL =
@@ -39,6 +42,7 @@ const tabs: { id: TabId; label: string }[] = [
   { id: "calendario", label: "Calendario" },
   { id: "faseGrupos", label: "Grupos" },
   { id: "clasificacion", label: "Clasificación" },
+  { id: "goleadores", label: "Goleadores" },
 ];
 
 type MundialAppProps = {
@@ -57,7 +61,29 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
   const [groupFilter, setGroupFilter] = useState("todos");
   const [stageFilter, setStageFilter] = useState<StageFilter>("todos");
   const [spainOnly, setSpainOnly] = useState(false);
+  const [scorers, setScorers] = useState<Scorer[] | null>(null);
+  const [scorersError, setScorersError] = useState(false);
   const hasAutoScrolled = useRef(false);
+
+  // Carga perezosa de goleadores la primera vez que se abre la pestaña.
+  useEffect(() => {
+    if (activeTab !== "goleadores" || scorers !== null) return;
+    let mounted = true;
+    fetch("/api/mundial/scorers", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((payload) => {
+        if (mounted) setScorers(Array.isArray(payload.scorers) ? payload.scorers : []);
+      })
+      .catch(() => {
+        if (mounted) {
+          setScorersError(true);
+          setScorers([]);
+        }
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [activeTab, scorers]);
 
   useEffect(() => {
     const saved = localStorage.getItem(THEME_STORAGE_KEY) as ThemeId | null;
@@ -297,7 +323,7 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
                       <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
                       <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
                     </span>
-                    En directo
+                    En directo{heroMatch && liveMinuteLabel(heroMatch) ? ` · ${liveMinuteLabel(heroMatch)}` : ""}
                   </>
                 ) : "Próximo partido"}
               </p>
@@ -335,7 +361,7 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
       {/* Content */}
       <div className="container-shell pt-4 pb-8 sm:py-8">
         <div className="flex flex-col gap-4 rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] p-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
-          <div className="grid grid-cols-3 rounded-md bg-[var(--wc-panel-bg)] p-1">
+          <div className="grid grid-cols-4 rounded-md bg-[var(--wc-panel-bg)] p-1">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
@@ -474,7 +500,17 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
               </section>
             ) : null}
 
-            {visibleKnockoutRounds.length > 0 ? (
+            {stageFilter === "todos" && !spainOnly && knockoutRounds.length > 0 ? (
+              <section className="mt-10">
+                <div className="mb-5 flex items-center gap-3 border-b border-[var(--wc-border)] pb-4">
+                  <span className="text-2xl">🏆</span>
+                  <h2 className="text-2xl font-black text-[var(--wc-text)]">
+                    Cuadro de eliminatorias
+                  </h2>
+                </div>
+                <KnockoutBracket rounds={knockoutRounds} />
+              </section>
+            ) : visibleKnockoutRounds.length > 0 ? (
               <section className="mt-10">
                 <div className="mb-5 flex items-center gap-3 border-b border-[var(--wc-border)] pb-4">
                   <span className="text-2xl">🏆</span>
@@ -497,6 +533,22 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
             {groups.map((group) => (
               <GroupTable key={group.group} group={group.group} teams={group.teams} />
             ))}
+          </section>
+        ) : null}
+
+        {activeTab === "goleadores" ? (
+          <section className="mt-6">
+            {scorers === null ? (
+              <p className="text-sm text-[var(--wc-muted)]">Cargando goleadores…</p>
+            ) : scorers.length > 0 ? (
+              <ScorersTable scorers={scorers} />
+            ) : (
+              <p className="rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] p-4 text-sm text-[var(--wc-muted)]">
+                {scorersError
+                  ? "No se ha podido cargar la tabla de goleadores. Vuelve a intentarlo en un rato."
+                  : "Aún no hay goleadores: la tabla se llena en cuanto caigan los primeros goles del torneo."}
+              </p>
+            )}
           </section>
         ) : null}
 

@@ -9,11 +9,12 @@ import {
   formatMadridTime,
   getTeamInfo,
   groupShortName,
+  liveMinuteLabel,
   matchScoreLabel,
   roundLabels,
 } from "./helpers";
 import { GROUP_COLORS, themeConfigs } from "./theme";
-import type { EnrichedMatch, Standing, ThemeId } from "./types";
+import type { EnrichedMatch, Scorer, Standing, ThemeId } from "./types";
 
 export function FlagImg({ code, name }: { code: string; name: string }) {
   return (
@@ -207,12 +208,59 @@ export function BroadcastButton({ match }: { match: EnrichedMatch }) {
   );
 }
 
-export function LiveBadge() {
+export function LiveBadge({ minute }: { minute?: string }) {
   return (
     <span className="inline-flex min-h-7 items-center gap-1.5 rounded-md border border-red-500/25 bg-red-500/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-red-500">
       <span className="h-1.5 w-1.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.85)]" />
-      Live
+      Live{minute ? ` · ${minute}` : ""}
     </span>
+  );
+}
+
+export function ScorersTable({ scorers }: { scorers: Scorer[] }) {
+  return (
+    <article className="overflow-hidden rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] shadow-sm">
+      <div className="flex items-center justify-between border-b border-[var(--wc-border)] bg-[var(--wc-card-header)] px-4 py-3 text-white">
+        <h2 className="text-lg font-bold">Máximos goleadores</h2>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-xs sm:text-sm">
+          <thead className="bg-[var(--wc-panel-bg)] text-left text-[10px] uppercase tracking-[0.08em] text-[var(--wc-muted)] sm:text-xs sm:tracking-[0.1em]">
+            <tr>
+              <th className="px-2 py-2 sm:px-4 sm:py-3">Jugador</th>
+              <th className="px-2 py-2 sm:px-4 sm:py-3">Selección</th>
+              <th className="px-1.5 py-2 text-center sm:px-3 sm:py-3">Goles</th>
+              <th className="hidden px-3 py-3 text-center sm:table-cell">Penaltis</th>
+              <th className="hidden px-3 py-3 text-center sm:table-cell">Asist.</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[var(--wc-border-inner)]">
+            {scorers.map((scorer, index) => (
+              <tr key={`${scorer.name}-${scorer.team}`} className={index < 3 ? "bg-[var(--wc-row-hl)]" : undefined}>
+                <td className="min-w-0 px-2 py-2 font-bold text-[var(--wc-text)] sm:px-4 sm:py-3">
+                  <span className="mr-1 inline-flex h-5 w-5 items-center justify-center rounded bg-[var(--wc-panel-bg)] text-[10px] text-[var(--wc-muted)] sm:mr-2 sm:h-6 sm:w-6 sm:text-xs">
+                    {index + 1}
+                  </span>
+                  {scorer.name}
+                </td>
+                <td className="px-2 py-2 text-[var(--wc-muted)] sm:px-4 sm:py-3">
+                  <TeamLabel team={scorer.team} compact />
+                </td>
+                <td className="px-1.5 py-2 text-center text-sm font-black text-[var(--wc-accent)] sm:px-3 sm:py-3 sm:text-base">
+                  {scorer.goals}
+                </td>
+                <td className="hidden px-3 py-3 text-center text-[var(--wc-muted)] sm:table-cell">
+                  {scorer.penalties}
+                </td>
+                <td className="hidden px-3 py-3 text-center text-[var(--wc-muted)] sm:table-cell">
+                  {scorer.assists}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </article>
   );
 }
 
@@ -230,7 +278,7 @@ export function MatchRow({ match }: { match: EnrichedMatch }) {
           <span className="text-[var(--wc-muted)]">{formatMadridTime(match.startsAt)}</span>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          {match.status === "live" ? <LiveBadge /> : null}
+          {match.status === "live" ? <LiveBadge minute={liveMinuteLabel(match)} /> : null}
           <GroupBadge group={match.group} />
           <BroadcastButton match={match} />
         </div>
@@ -330,7 +378,7 @@ export function MiniMatchRow({ match }: { match: EnrichedMatch }) {
             <span>{match.ground}</span>
           </>
         ) : null}
-        {match.status === "live" ? <LiveBadge /> : null}
+        {match.status === "live" ? <LiveBadge minute={liveMinuteLabel(match)} /> : null}
         <span className="ml-auto">
           <BroadcastButton match={match} />
         </span>
