@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { KnockoutBracket } from "./Bracket";
 import {
   FlagImg,
@@ -21,7 +21,6 @@ import {
   enrichMatches,
   formatLongMadridDate,
   formatMadridTime,
-  groupMatchesByDay,
   groupShortName,
   isGroupMatch,
   isTeamMatch,
@@ -38,11 +37,11 @@ const DATA_URL = process.env.NEXT_PUBLIC_WORLD_CUP_DATA_URL ?? "/api/mundial/dat
 const OPENFOOTBALL_FALLBACK_URL =
   "https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json";
 
-const tabs: { id: TabId; label: string }[] = [
-  { id: "calendario", label: "Calendario" },
-  { id: "faseGrupos", label: "Grupos" },
-  { id: "clasificacion", label: "Clasificación" },
-  { id: "goleadores", label: "Goleadores" },
+const tabs: { id: TabId; label: string; short: string }[] = [
+  { id: "calendario", label: "Calendario", short: "Cal." },
+  { id: "faseGrupos", label: "Grupos", short: "Grupos" },
+  { id: "clasificacion", label: "Clasificación", short: "Clasif." },
+  { id: "goleadores", label: "Goleadores", short: "Goles" },
 ];
 
 type MundialAppProps = {
@@ -63,8 +62,6 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
   const [spainOnly, setSpainOnly] = useState(false);
   const [scorers, setScorers] = useState<Scorer[] | null>(null);
   const [scorersError, setScorersError] = useState(false);
-  const hasAutoScrolled = useRef(false);
-
   // Carga perezosa de goleadores la primera vez que se abre la pestaña.
   useEffect(() => {
     if (activeTab !== "goleadores" || scorers !== null) return;
@@ -184,17 +181,6 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
     setRefreshTick((t) => t + 1);
   }
 
-  // Auto-scroll al día de hoy la primera vez que se carga el calendario
-  useEffect(() => {
-    if (activeTab !== "calendario" || hasAutoScrolled.current || !data) return;
-    const today = new Date().toISOString().slice(0, 10);
-    const el = document.getElementById(`dia-${today}`);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-      hasAutoScrolled.current = true;
-    }
-  }, [activeTab, data]);
-
   const matches = useMemo(() => enrichMatches(data?.matches ?? []), [data]);
   const groups = useMemo(() => buildStandings(matches), [matches]);
   const groupCards = useMemo(() => buildGroupCards(matches), [matches]);
@@ -239,9 +225,6 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
     const matchesSpain = !spainOnly || isTeamMatch(match, SPAIN_TEAM);
     return matchesQuery && matchesGroup && matchesSpain;
   });
-
-  const todayDate = new Date().toISOString().slice(0, 10);
-  const hasTodayMatches = filteredMatches.some((m) => m.date === todayDate);
 
   const visibleGroupCards =
     (stageFilter === "todos"
@@ -365,7 +348,7 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
             {tabs.map((tab) => (
               <button
                 key={tab.id}
-                className={`focus-ring min-h-10 rounded-md px-2 text-center text-sm font-bold transition ${
+                className={`focus-ring min-h-10 rounded-md px-2 text-center text-xs sm:text-sm font-bold transition ${
                   activeTab === tab.id
                     ? "bg-[var(--wc-accent)] text-[var(--wc-accent-fg)] shadow-sm"
                     : "text-[var(--wc-muted)] hover:bg-[var(--wc-card-bg)] hover:text-[var(--wc-text)]"
@@ -373,7 +356,8 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
               >
-                {tab.label}
+                <span className="sm:hidden">{tab.short}</span>
+                <span className="hidden sm:inline">{tab.label}</span>
               </button>
             ))}
           </div>
@@ -405,19 +389,6 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
                 compact
                 onClick={() => setSpainOnly((value) => !value)}
               />
-              {hasTodayMatches ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    document
-                      .getElementById(`dia-${new Date().toISOString().slice(0, 10)}`)
-                      ?.scrollIntoView({ behavior: "smooth", block: "start" });
-                  }}
-                  className="focus-ring inline-flex min-h-9 shrink-0 items-center rounded-md bg-[var(--wc-panel-bg)] px-3 text-sm font-bold text-[var(--wc-muted)] transition hover:text-[var(--wc-text)]"
-                >
-                  Hoy
-                </button>
-              ) : null}
               <input
                 aria-label="Buscar equipo, ciudad o grupo"
                 className="min-h-9 min-w-0 flex-[1_1_150px] rounded-md border border-[var(--wc-border)] bg-[var(--wc-panel-bg)] px-3 text-sm text-[var(--wc-text)] outline-none transition focus:border-[var(--wc-accent)] focus:ring-2 focus:ring-[var(--wc-accent)]"
@@ -442,24 +413,9 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
               </select>
             </div>
 
-            <div className="mt-4 space-y-6">
-              {groupMatchesByDay(filteredMatches).map(({ date, matches: dayMatches }) => (
-                <div key={date} id={`dia-${date}`}>
-                  <div className="mb-3 flex items-center gap-3">
-                    <h3 className="text-xs font-bold uppercase tracking-wide text-[var(--wc-muted)]">
-                      {formatLongMadridDate(dayMatches[0].startsAt)}
-                    </h3>
-                    <span className="h-px flex-1 bg-[var(--wc-border)]" />
-                    <span className="text-[10px] text-[var(--wc-muted)]">
-                      {dayMatches.length === 1 ? "1 partido" : `${dayMatches.length} partidos`}
-                    </span>
-                  </div>
-                  <div className="space-y-3">
-                    {dayMatches.map((match) => (
-                      <MatchRow key={match.id} match={match} />
-                    ))}
-                  </div>
-                </div>
+            <div className="mt-4 space-y-3">
+              {filteredMatches.map((match) => (
+                <MatchRow key={match.id} match={match} />
               ))}
             </div>
           </section>
