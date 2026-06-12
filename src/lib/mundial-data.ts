@@ -7,6 +7,8 @@ const FOOTBALL_DATA_MATCHES_URL =
   "https://api.football-data.org/v4/competitions/WC/matches";
 const ESPN_SCOREBOARD_URL =
   "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/scoreboard?dates=2026&limit=200";
+const ESPN_LEADERS_URL =
+  "https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/leaders";
 const FOOTBALL_DATA_SCORERS_URL =
   "https://api.football-data.org/v4/competitions/WC/scorers?limit=25";
 
@@ -76,6 +78,25 @@ type EspnEvent = {
 
 type EspnResponse = {
   events?: EspnEvent[];
+};
+
+type EspnLeaderAthlete = {
+  displayName?: string | null;
+  team?: { displayName?: string | null } | null;
+};
+
+type EspnLeaderEntry = {
+  value?: number | null;
+  athlete?: EspnLeaderAthlete | null;
+};
+
+type EspnLeadersCategory = {
+  name?: string | null;
+  leaders?: EspnLeaderEntry[] | null;
+};
+
+type EspnLeadersResponse = {
+  categories?: EspnLeadersCategory[] | null;
 };
 
 const teamAliases: Record<string, string> = {
@@ -450,31 +471,64 @@ type FootballDataScorer = {
   penalties?: number | null;
 };
 
+async function fetchEspnScorers(): Promise<Scorer[]> {
+  const response = await fetch(ESPN_LEADERS_URL, { cache: "no-store" });
+  if (!response.ok) throw new Error(`ESPN leaders HTTP ${response.status}`);
+
+  const data = (await response.json()) as EspnLeadersResponse;
+  const categories = data.categories ?? [];
+  const goalsCategory = categories.find(
+    (cat) => cat.name === "goals" || cat.name === "Goals",
+  );
+  if (!goalsCategory?.leaders?.length) return [];
+
+  const assistsCategory = categories.find(
+    (cat) => cat.name === "assists" || cat.name === "Assists",
+  );
+  const assistsByName = new Map<string, number>();
+  for (const entry of assistsCategory?.leaders ?? []) {
+    if (entry.athlete?.displayName) {
+      assistsByName.set(entry.athlete.displayName, entry.value ?? 0);
+    }
+  }
+
+  return goalsCategory.leaders
+    .filter(
+      (entry): entry is EspnLeaderEntry & { athlete: EspnLeaderAthlete } =>
+        Boolean(entry.athlete?.displayName),
+    )
+    .map((entry) => {
+      const teamName = entry.athlete.team?.displayName ?? "";
+      return {
+        name: String(entry.athlete.displayName),
+        team: teamAliases[teamName] ?? (teamName || "TBD"),
+        goals: entry.value ?? 0,
+        assists: assistsByName.get(String(entry.athlete.displayName)) ?? 0,
+        penalties: 0,
+      };
+    });
+}
+
 async function fetchScorers(): Promise<Scorer[]> {
   const apiKey = process.env.FOOTBALL_DATA_API_KEY;
-  if (!apiKey) {
-    return [];
+  if (apiKey) {
+    const response = await fetch(FOOTBALL_DATA_SCORERS_URL, {
+      headers: { "X-Auth-Token": apiKey },
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error(`football-data.org scorers HTTP ${response.status}`);
+    const data = (await response.json()) as { scorers?: FootballDataScorer[] };
+    return (data.scorers ?? [])
+      .filter((scorer) => scorer.player?.name)
+      .map((scorer) => ({
+        name: String(scorer.player?.name),
+        team: normalizeTeam(scorer.team),
+        goals: Number(scorer.goals) || 0,
+        assists: Number(scorer.assists) || 0,
+        penalties: Number(scorer.penalties) || 0,
+      }));
   }
-
-  const response = await fetch(FOOTBALL_DATA_SCORERS_URL, {
-    headers: { "X-Auth-Token": apiKey },
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    throw new Error(`football-data.org scorers HTTP ${response.status}`);
-  }
-
-  const data = (await response.json()) as { scorers?: FootballDataScorer[] };
-  return (data.scorers ?? [])
-    .filter((scorer) => scorer.player?.name)
-    .map((scorer) => ({
-      name: String(scorer.player?.name),
-      team: normalizeTeam(scorer.team),
-      goals: Number(scorer.goals) || 0,
-      assists: Number(scorer.assists) || 0,
-      penalties: Number(scorer.penalties) || 0,
-    }));
+  return fetchEspnScorers();
 }
 
 export const getTopScorers = unstable_cache(
