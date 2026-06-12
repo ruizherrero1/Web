@@ -18,6 +18,7 @@ import {
   buildGroupCards,
   buildKnockoutRounds,
   buildStandings,
+  countdownLabel,
   enrichMatches,
   formatLongMadridDate,
   formatMadridTime,
@@ -63,6 +64,16 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
   const [scorers, setScorers] = useState<Scorer[] | null>(null);
   const [scorersError, setScorersError] = useState(false);
   const hasAutoScrolled = useRef(false);
+
+  // Reloj para la cuenta atras del hero. Arranca tras el montaje (en SSR no
+  // hay "ahora" estable) y se refresca cada 30 s.
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    setNow(Date.now());
+    const id = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+
   // Carga perezosa de goleadores la primera vez que se abre la pestaña.
   useEffect(() => {
     if (activeTab !== "goleadores" || scorers !== null) return;
@@ -210,6 +221,19 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
   const heroMatch = liveMatch ?? nextMatch;
   const isHeroLive = heroMatch?.status === "live";
 
+  const nextSpainMatch = matches.find(
+    (match) => match.status !== "finished" && isTeamMatch(match, SPAIN_TEAM),
+  );
+  const spainCountdown =
+    nextSpainMatch && nextSpainMatch.status !== "live" && now
+      ? countdownLabel(nextSpainMatch.timestamp, now)
+      : "";
+  const spainRival = nextSpainMatch
+    ? nextSpainMatch.team1 === SPAIN_TEAM
+      ? nextSpainMatch.team2
+      : nextSpainMatch.team1
+    : "";
+
   const normalizedQuery = normalizeText(query.trim());
   const filteredMatches = matches.filter((match) => {
     const matchesQuery =
@@ -320,6 +344,18 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
                   <span>Canadá</span>
                 </span>
               </p>
+              {nextSpainMatch && (nextSpainMatch.status === "live" || spainCountdown) ? (
+                <p className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.08] px-3 py-1.5 text-sm font-semibold sm:mt-4">
+                  <FlagImg code="es" name="España" />
+                  {nextSpainMatch.status === "live" ? (
+                    <span>España juega ahora</span>
+                  ) : (
+                    <span>
+                      España vs {displayTeamName(spainRival)} en {spainCountdown}
+                    </span>
+                  )}
+                </p>
+              ) : null}
             </div>
 
             <aside className="rounded-xl border border-white/15 bg-white/[0.08] p-5 shadow-2xl shadow-black/20">

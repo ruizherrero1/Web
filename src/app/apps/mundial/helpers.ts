@@ -188,6 +188,18 @@ export function liveMinuteLabel(match: EnrichedMatch) {
   return `~${Math.min(elapsed, 130)}'`;
 }
 
+// Cuenta atras compacta: "3 d 14 h", "2 h 5 min" o "12 min".
+export function countdownLabel(target: number, now: number) {
+  const minutes = Math.floor((target - now) / 60_000);
+  if (minutes <= 0) return "";
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  const mins = minutes % 60;
+  if (days > 0) return `${days} d ${hours} h`;
+  if (hours > 0) return `${hours} h ${mins} min`;
+  return `${mins} min`;
+}
+
 export function normalizeText(value: string) {
   return value
     .normalize("NFD")

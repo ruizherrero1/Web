@@ -42,18 +42,18 @@ export function ThemeSelector({
         <button
           key={id}
           type="button"
+          title={themeConfigs[id].label}
+          aria-label={`Tema ${themeConfigs[id].label}`}
+          aria-pressed={activeTheme === id}
           onClick={() => onThemeChange(id)}
-          className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold transition-all ${
-            activeTheme === id
-              ? themeConfigs[id].activeClass
-              : "text-white/70 hover:bg-white/10 hover:text-white"
+          className={`flex h-7 w-7 items-center justify-center rounded-full transition ${
+            activeTheme === id ? "bg-white/25 ring-1 ring-white/60" : "hover:bg-white/10"
           }`}
         >
           <span
-            className="h-2 w-2 flex-shrink-0 rounded-full border border-white/30"
+            className="h-3.5 w-3.5 rounded-full border border-white/40"
             style={{ background: themeConfigs[id].swatch }}
           />
-          {themeConfigs[id].label}
         </button>
       ))}
     </div>
