@@ -10,6 +10,14 @@ export type Score = {
   p?: [number, number];
 };
 
+export type GoalEvent = {
+  minute: string;
+  scorer: string;
+  team: string;
+  ownGoal?: boolean;
+  penalty?: boolean;
+};
+
 export type RawMatch = {
   round: string;
   num?: number;
@@ -22,6 +30,7 @@ export type RawMatch = {
   matchStatus?: string;
   minute?: number;
   score?: Score;
+  goals?: GoalEvent[];
 };
 
 export type Scorer = {

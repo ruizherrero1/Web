@@ -276,11 +276,50 @@ export function ScorersTable({ scorers }: { scorers: Scorer[] }) {
   );
 }
 
-export function MatchRow({ match, domId }: { match: EnrichedMatch; domId?: string }) {
-  const score = matchScoreLabel(match);
+function GoalsPanel({ match }: { match: EnrichedMatch }) {
+  const goals = match.goals ?? [];
+  const leftGoals = goals.filter((g) => g.team === match.team1);
+  const rightGoals = goals.filter((g) => g.team === match.team2);
 
   return (
-    <article id={domId} className="rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] p-3 shadow-sm transition hover:border-[var(--wc-accent)]">
+    <div className="mt-2 border-t border-[var(--wc-border-inner)] pt-2">
+      <div className="grid grid-cols-[1fr_1px_1fr] gap-x-2 text-[11px]">
+        <div className="space-y-0.5 text-right">
+          {leftGoals.map((g, i) => (
+            <div key={i} className="text-[var(--wc-text)]">
+              <span className="mr-0.5 text-[var(--wc-muted)]">{g.scorer}</span>
+              {g.ownGoal ? <span className="text-[var(--wc-muted)]"> (p.p.)</span> : g.penalty ? <span className="text-[var(--wc-muted)]"> (p.)</span> : null}
+              <span className="ml-1 font-bold text-[var(--wc-accent)]">{g.minute}</span>
+            </div>
+          ))}
+        </div>
+        <div className="bg-[var(--wc-border-inner)]" />
+        <div className="space-y-0.5">
+          {rightGoals.map((g, i) => (
+            <div key={i} className="text-[var(--wc-text)]">
+              <span className="mr-1 font-bold text-[var(--wc-accent)]">{g.minute}</span>
+              <span className="text-[var(--wc-muted)]">{g.scorer}</span>
+              {g.ownGoal ? <span className="text-[var(--wc-muted)]"> (p.p.)</span> : g.penalty ? <span className="text-[var(--wc-muted)]"> (p.)</span> : null}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function MatchRow({ match, domId }: { match: EnrichedMatch; domId?: string }) {
+  const score = matchScoreLabel(match);
+  const hasGoals = (match.goals?.length ?? 0) > 0;
+  const canExpand = hasGoals && (match.status === "live" || match.status === "finished");
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <article
+      id={domId}
+      className={`rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] p-3 shadow-sm transition hover:border-[var(--wc-accent)] ${canExpand ? "cursor-pointer select-none" : ""}`}
+      onClick={canExpand ? () => setExpanded((v) => !v) : undefined}
+    >
       <div className="flex items-center justify-between gap-2 text-xs">
         <div className="flex items-center gap-x-2">
           <span className="font-bold capitalize text-[var(--wc-text)]">
@@ -293,6 +332,13 @@ export function MatchRow({ match, domId }: { match: EnrichedMatch; domId?: strin
           {match.status === "live" ? <LiveBadge minute={liveMinuteLabel(match)} /> : null}
           <GroupBadge group={match.group} />
           <BroadcastButton match={match} />
+          {canExpand ? (
+            <span className={`text-[var(--wc-muted)] transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}>
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} className="h-3.5 w-3.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 5.5l5 5 5-5" />
+              </svg>
+            </span>
+          ) : null}
         </div>
       </div>
       <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
@@ -309,6 +355,7 @@ export function MatchRow({ match, domId }: { match: EnrichedMatch; domId?: strin
       {match.ground ? (
         <p className="mt-1.5 text-center text-xs text-[var(--wc-muted)]">{match.ground}</p>
       ) : null}
+      {expanded && hasGoals ? <GoalsPanel match={match} /> : null}
     </article>
   );
 }
@@ -375,9 +422,15 @@ export function KnockoutRoundCard({
 
 export function MiniMatchRow({ match }: { match: EnrichedMatch }) {
   const score = matchScoreLabel(match);
+  const hasGoals = (match.goals?.length ?? 0) > 0;
+  const canExpand = hasGoals && (match.status === "live" || match.status === "finished");
+  const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="px-4 py-3">
+    <div
+      className={`px-4 py-3 ${canExpand ? "cursor-pointer select-none" : ""}`}
+      onClick={canExpand ? () => setExpanded((v) => !v) : undefined}
+    >
       <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-[var(--wc-muted)]">
         <span className="font-semibold capitalize text-[var(--wc-text)]">
           {formatMadridDate(match.startsAt)}
@@ -391,8 +444,15 @@ export function MiniMatchRow({ match }: { match: EnrichedMatch }) {
           </>
         ) : null}
         {match.status === "live" ? <LiveBadge minute={liveMinuteLabel(match)} /> : null}
-        <span className="ml-auto">
+        <span className="ml-auto flex items-center gap-1">
           <BroadcastButton match={match} />
+          {canExpand ? (
+            <span className={`text-[var(--wc-muted)] transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}>
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} className="h-3 w-3">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 5.5l5 5 5-5" />
+              </svg>
+            </span>
+          ) : null}
         </span>
       </div>
       <div className="mt-1.5 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
@@ -406,6 +466,7 @@ export function MiniMatchRow({ match }: { match: EnrichedMatch }) {
           <TeamLabel team={match.team2} compact />
         </div>
       </div>
+      {expanded && hasGoals ? <GoalsPanel match={match} /> : null}
     </div>
   );
 }

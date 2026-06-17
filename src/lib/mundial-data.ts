@@ -1,5 +1,5 @@
 import { unstable_cache } from "next/cache";
-import type { RawMatch, Score, Scorer, TournamentData } from "@/app/apps/mundial/types";
+import type { GoalEvent, RawMatch, Score, Scorer, TournamentData } from "@/app/apps/mundial/types";
 
 const OPENFOOTBALL_URL =
   "https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json";
@@ -64,6 +64,8 @@ type EspnDetail = {
   shootout?: boolean;
   team?: { id?: string };
   athletesInvolved?: Array<{ displayName?: string | null }>;
+  clock?: { value?: number; displayValue?: string };
+  period?: { number?: number };
 };
 
 type EspnEvent = {
@@ -188,6 +190,23 @@ function normalizeFootballDataMatch(match: FootballDataMatch): RawMatch {
   };
 }
 
+function espnGoalMinute(detail: EspnDetail): string {
+  const display = detail.clock?.displayValue;
+  if (display) {
+    // ESPN may return "39:00", "39", or "45+2:00" formats
+    const m = display.match(/^(\d+)(?::\d+)?(?:\+(\d+))?/);
+    if (m) return m[2] ? `${m[1]}+${m[2]}'` : `${m[1]}'`;
+    return `${display}'`;
+  }
+  const secs = detail.clock?.value ?? 0;
+  const period = detail.period?.number ?? 1;
+  const mins = Math.ceil(secs / 60);
+  if (period === 2) return `${45 + mins}'`;
+  if (period === 3) return `${90 + mins}'`;
+  if (period === 4) return `${105 + mins}'`;
+  return `${mins}'`;
+}
+
 function normalizeEspnStatus(event: EspnEvent) {
   const type = event.status?.type;
   const name = type?.name ?? "";
@@ -236,6 +255,29 @@ function normalizeEspnMatch(event: EspnEvent): RawMatch | null {
     Number.isFinite(homeScore) &&
     Number.isFinite(awayScore);
 
+  // Build team ID → name map to attribute goals to the right team
+  const teamById = new Map<string, string>();
+  for (const competitor of competition?.competitors ?? []) {
+    if (competitor.team?.id) {
+      teamById.set(competitor.team.id, normalizeEspnTeam(competitor));
+    }
+  }
+
+  const goals: GoalEvent[] = [];
+  for (const detail of competition?.details ?? []) {
+    if (!detail.scoringPlay || detail.shootout) continue;
+    const name = detail.athletesInvolved?.[0]?.displayName;
+    if (!name) continue;
+    const team = teamById.get(detail.team?.id ?? "") ?? "TBD";
+    goals.push({
+      minute: espnGoalMinute(detail),
+      scorer: name,
+      team,
+      ...(detail.ownGoal ? { ownGoal: true } : {}),
+      ...(detail.penaltyKick ? { penalty: true } : {}),
+    });
+  }
+
   return {
     round: "Match",
     num: event.id ? Number(event.id) : undefined,
@@ -246,6 +288,7 @@ function normalizeEspnMatch(event: EspnEvent): RawMatch | null {
     ground: competition?.venue?.fullName ?? undefined,
     matchStatus,
     score: hasScore ? { ft: [homeScore, awayScore] } : undefined,
+    ...(goals.length > 0 ? { goals } : {}),
   };
 }
 
