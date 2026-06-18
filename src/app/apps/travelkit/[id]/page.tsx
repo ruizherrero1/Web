@@ -76,11 +76,17 @@ function SectionBlock({
             </button>
           </div>
         ) : (
-          <div className="flex items-center gap-2 flex-1 group">
-            <h2 className="text-base font-bold text-[var(--ink)]">{section.title}</h2>
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <h2 className="text-lg font-bold text-[var(--ink)] truncate">{section.title}</h2>
             {section.items.length > 0 && (
-              <span className="text-xs text-[var(--muted)]">
-                ({checked}/{section.items.length})
+              <span
+                className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold transition ${
+                  checked === section.items.length
+                    ? "bg-[var(--accent-soft)] text-[var(--accent-dark)]"
+                    : "bg-[var(--surface-strong)] text-[var(--muted)]"
+                }`}
+              >
+                {checked}/{section.items.length}
               </span>
             )}
             <button
@@ -88,16 +94,17 @@ function SectionBlock({
                 setTitleDraft(section.title);
                 setEditingTitle(true);
               }}
-              className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-[var(--muted)] hover:text-[var(--ink)] transition"
+              aria-label="Editar título de sección"
+              className="shrink-0 text-[var(--muted)] opacity-40 hover:opacity-100 hover:text-[var(--ink)] transition"
             >
-              <Pencil className="size-3.5" />
+              <Pencil className="size-4" />
             </button>
           </div>
         )}
         <button
           onClick={onDelete}
           aria-label="Eliminar sección"
-          className="focus-ring text-[var(--muted)] hover:text-red-500 transition"
+          className="focus-ring -mr-2 grid size-11 shrink-0 place-items-center text-[var(--muted)] opacity-40 transition hover:text-red-500 hover:opacity-100"
         >
           <Trash2 className="size-4" />
         </button>
@@ -105,32 +112,38 @@ function SectionBlock({
 
       {/* Items */}
       {section.items.length > 0 && (
-        <ul className="space-y-2 mb-3">
+        <ul className="-mx-2 mb-2 divide-y divide-[var(--line)]">
           {section.items.map((item) => (
-            <li key={item.id} className="flex items-center gap-3 group">
+            <li key={item.id} className="flex items-center">
+              {/* Toda la fila es pulsable: área de toque cómoda para móvil */}
               <button
                 onClick={() => onToggleItem(item.id, !item.checked)}
-                className={`size-5 shrink-0 rounded border-2 flex items-center justify-center transition ${
-                  item.checked
-                    ? "bg-[var(--accent)] border-[var(--accent)]"
-                    : "border-[var(--line)] hover:border-[var(--accent)]"
-                }`}
+                aria-pressed={item.checked}
+                className="flex flex-1 items-center gap-3 rounded-lg px-2 py-2.5 min-h-12 text-left transition active:bg-[var(--surface-strong)]"
               >
-                {item.checked && <Check className="size-3 text-white" strokeWidth={3} />}
+                <span
+                  className={`size-7 shrink-0 rounded-md border-2 flex items-center justify-center transition ${
+                    item.checked
+                      ? "bg-[var(--accent)] border-[var(--accent)]"
+                      : "border-[var(--line)]"
+                  }`}
+                >
+                  {item.checked && <Check className="size-4 text-white" strokeWidth={3} />}
+                </span>
+                <span
+                  className={`flex-1 text-base leading-snug transition ${
+                    item.checked ? "line-through text-[var(--muted)]" : "text-[var(--ink)]"
+                  }`}
+                >
+                  {item.label}
+                </span>
               </button>
-              <span
-                className={`flex-1 text-sm transition ${
-                  item.checked ? "line-through text-[var(--muted)]" : "text-[var(--ink)]"
-                }`}
-              >
-                {item.label}
-              </span>
               <button
                 onClick={() => onDeleteItem(item.id)}
                 aria-label="Eliminar ítem"
-                className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-[var(--muted)] hover:text-red-500 transition"
+                className="focus-ring grid size-11 shrink-0 place-items-center text-[var(--muted)] opacity-40 transition hover:text-red-500 hover:opacity-100"
               >
-                <Trash2 className="size-3.5" />
+                <Trash2 className="size-4" />
               </button>
             </li>
           ))}
@@ -161,7 +174,7 @@ function SectionBlock({
       ) : (
         <button
           onClick={() => setAddingItem(true)}
-          className="flex items-center gap-1.5 text-sm text-[var(--muted)] hover:text-[var(--accent-dark)] transition mt-2"
+          className="flex min-h-11 items-center gap-1.5 text-sm font-medium text-[var(--muted)] hover:text-[var(--accent-dark)] transition mt-1"
         >
           <Plus className="size-4" />
           Añadir ítem
