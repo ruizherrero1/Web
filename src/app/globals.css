@@ -179,3 +179,22 @@ body[data-mundial-standalone="true"] main {
 .mundial-app-shell textarea {
   font-size: 16px;
 }
+
+/* TravelKit como app instalada: al abrir desde el icono de inicio
+   (display-mode: standalone) se oculta la cabecera/pie del sitio para que se
+   vea como una app. En el navegador normal NO se oculta nada. */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  body:has(.travelkit-app-shell) > header,
+  body:has(.travelkit-app-shell) > footer {
+    display: none;
+  }
+
+  body:has(.travelkit-app-shell) main {
+    min-height: 100vh;
+  }
+}
+
+/* Evita el zoom de iOS al enfocar inputs dentro de la app */
+.travelkit-app-shell input {
+  font-size: 16px;
+}

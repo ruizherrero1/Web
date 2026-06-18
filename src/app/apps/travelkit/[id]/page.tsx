@@ -8,6 +8,7 @@ import type { ChecklistItem, KitWithSections, SectionWithItems } from "@/lib/sup
 import { SharePanel } from "../_components/SharePanel";
 import {
   ChevronLeft,
+  ChevronDown,
   Plus,
   Trash2,
   Check,
@@ -37,6 +38,7 @@ function SectionBlock({
   const [titleDraft, setTitleDraft] = useState(section.title);
   const [addingItem, setAddingItem] = useState(false);
   const [newLabel, setNewLabel] = useState("");
+  const [collapsed, setCollapsed] = useState(false);
 
   function saveTitle() {
     if (titleDraft.trim()) onUpdateTitle(titleDraft.trim());
@@ -55,7 +57,7 @@ function SectionBlock({
   return (
     <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)] p-5">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-4">
+      <div className={`flex items-center gap-1 ${collapsed ? "" : "mb-4"}`}>
         {editingTitle ? (
           <div className="flex items-center gap-2 flex-1">
             <input
@@ -68,38 +70,50 @@ function SectionBlock({
               }}
               className="flex-1 text-base font-bold text-[var(--ink)] bg-transparent border-b border-[var(--accent)] focus:outline-none"
             />
-            <button onClick={saveTitle} className="text-[var(--accent-dark)]">
-              <Check className="size-4" />
+            <button onClick={saveTitle} className="grid size-11 place-items-center text-[var(--accent-dark)]">
+              <Check className="size-5" />
             </button>
-            <button onClick={() => setEditingTitle(false)} className="text-[var(--muted)]">
-              <X className="size-4" />
+            <button onClick={() => setEditingTitle(false)} className="grid size-11 place-items-center text-[var(--muted)]">
+              <X className="size-5" />
             </button>
           </div>
         ) : (
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <h2 className="text-lg font-bold text-[var(--ink)] truncate">{section.title}</h2>
-            {section.items.length > 0 && (
-              <span
-                className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold transition ${
-                  checked === section.items.length
-                    ? "bg-[var(--accent-soft)] text-[var(--accent-dark)]"
-                    : "bg-[var(--surface-strong)] text-[var(--muted)]"
+          <>
+            {/* Toda la zona de título pliega/despliega la sección */}
+            <button
+              onClick={() => setCollapsed((c) => !c)}
+              aria-expanded={!collapsed}
+              className="flex flex-1 items-center gap-2 min-w-0 min-h-11 text-left"
+            >
+              <ChevronDown
+                className={`size-5 shrink-0 text-[var(--muted)] transition-transform ${
+                  collapsed ? "-rotate-90" : ""
                 }`}
-              >
-                {checked}/{section.items.length}
-              </span>
-            )}
+              />
+              <h2 className="text-lg font-bold text-[var(--ink)] truncate">{section.title}</h2>
+              {section.items.length > 0 && (
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold transition ${
+                    checked === section.items.length
+                      ? "bg-[var(--accent-soft)] text-[var(--accent-dark)]"
+                      : "bg-[var(--surface-strong)] text-[var(--muted)]"
+                  }`}
+                >
+                  {checked}/{section.items.length}
+                </span>
+              )}
+            </button>
             <button
               onClick={() => {
                 setTitleDraft(section.title);
                 setEditingTitle(true);
               }}
               aria-label="Editar título de sección"
-              className="shrink-0 text-[var(--muted)] opacity-40 hover:opacity-100 hover:text-[var(--ink)] transition"
+              className="shrink-0 grid size-11 place-items-center text-[var(--muted)] opacity-40 transition hover:opacity-100 hover:text-[var(--ink)]"
             >
               <Pencil className="size-4" />
             </button>
-          </div>
+          </>
         )}
         <button
           onClick={onDelete}
@@ -110,8 +124,8 @@ function SectionBlock({
         </button>
       </div>
 
-      {/* Items */}
-      {section.items.length > 0 && (
+      {/* Items (ocultos al plegar) */}
+      {!collapsed && section.items.length > 0 && (
         <ul className="-mx-2 mb-2 divide-y divide-[var(--line)]">
           {section.items.map((item) => (
             <li key={item.id} className="flex items-center">
@@ -150,8 +164,8 @@ function SectionBlock({
         </ul>
       )}
 
-      {/* Add item */}
-      {addingItem ? (
+      {/* Add item (oculto al plegar) */}
+      {!collapsed && (addingItem ? (
         <div className="flex items-center gap-2 mt-2">
           <input
             autoFocus
@@ -179,7 +193,7 @@ function SectionBlock({
           <Plus className="size-4" />
           Añadir ítem
         </button>
-      )}
+      ))}
     </section>
   );
 }

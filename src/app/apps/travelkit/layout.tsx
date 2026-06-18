@@ -19,5 +19,8 @@ export default function TravelKitLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return children;
+  // La clase marca estas páginas para que, al abrirse como app instalada
+  // (display-mode: standalone), globals.css oculte la cabecera y el pie del
+  // sitio y se vea como una app. En el navegador normal no cambia nada.
+  return <div className="travelkit-app-shell">{children}</div>;
 }
