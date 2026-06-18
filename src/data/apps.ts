@@ -50,10 +50,10 @@ export const apps = [
   {
     name: "TravelKit",
     slug: "travelkit",
-    description: "Checklists y documentación para preparar viajes.",
-    status: "Idea",
-    access: "Privado",
-    href: "/privado",
+    description: "Checklists personalizadas para preparar cada viaje. Secciones, progreso y plantillas reutilizables.",
+    status: "Activo",
+    access: "Invitación",
+    href: "/apps/travelkit",
     focus: "Viajes",
   },
   {
