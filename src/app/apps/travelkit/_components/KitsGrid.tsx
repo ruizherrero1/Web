@@ -6,6 +6,7 @@ import type { TravelKit } from "@/lib/supabase/types";
 import type { ChecklistItem } from "@/lib/supabase/types";
 import { KitCard } from "./KitCard";
 import { Plus, Loader2, LogOut } from "lucide-react";
+import { clearTravelKitOfflineData } from "@/lib/travelkit/offline";
 
 type KitsGridProps = {
   kits: TravelKit[];
@@ -118,7 +119,13 @@ export function KitsGrid({ kits, templates, currentUserId, onRefresh }: KitsGrid
 
   async function handleSignOut() {
     const supabase = createClient();
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+    } finally {
+      // No dejar datos privados de viajes accesibles en el dispositivo después
+      // de cerrar sesión, aunque la petición de logout no tenga conexión.
+      clearTravelKitOfflineData();
+    }
   }
 
   return (

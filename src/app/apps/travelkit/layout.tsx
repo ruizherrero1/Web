@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { OfflineProvider } from "./_components/OfflineProvider";
 
 // Layout servidor del segmento TravelKit: enlaza el manifest propio y fija el
 // nombre/comportamiento de app en iOS, de modo que "Añadir a pantalla de inicio"
@@ -22,5 +23,9 @@ export default function TravelKitLayout({
   // La clase marca estas páginas para que, al abrirse como app instalada
   // (display-mode: standalone), globals.css oculte la cabecera y el pie del
   // sitio y se vea como una app. En el navegador normal no cambia nada.
-  return <div className="travelkit-app-shell">{children}</div>;
+  return (
+    <OfflineProvider>
+      <div className="travelkit-app-shell">{children}</div>
+    </OfflineProvider>
+  );
 }
