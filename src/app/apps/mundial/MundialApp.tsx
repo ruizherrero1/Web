@@ -70,9 +70,12 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
   // hay "ahora" estable) y se refresca cada 30 s.
   const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
-    setNow(Date.now());
+    const initialId = window.setTimeout(() => setNow(Date.now()), 0);
     const id = window.setInterval(() => setNow(Date.now()), 30_000);
-    return () => window.clearInterval(id);
+    return () => {
+      window.clearTimeout(initialId);
+      window.clearInterval(id);
+    };
   }, []);
 
   // Carga perezosa de goleadores la primera vez que se abre la pestaña.
@@ -272,7 +275,6 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
       element.scrollIntoView({ block: "center" });
       hasAutoScrolled.current = true;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, nextMatchId]);
 
   useEffect(() => {

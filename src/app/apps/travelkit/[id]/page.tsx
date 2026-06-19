@@ -7,6 +7,13 @@ import { createClient } from "@/lib/supabase/client";
 import type { ChecklistItem, KitWithSections, SectionWithItems } from "@/lib/supabase/types";
 import { SharePanel } from "../_components/SharePanel";
 import {
+  cacheKit,
+  OFFLINE_SYNC_COMPLETED,
+  patchCachedKitInList,
+  queueMutation,
+  readCachedKit,
+} from "@/lib/travelkit/offline";
+import {
   ChevronLeft,
   ChevronDown,
   Plus,
@@ -22,6 +29,7 @@ import {
 function SectionBlock({
   section,
   onToggleItem,
+  onToggleAll,
   onDeleteItem,
   onAddItem,
   onUpdateTitle,
@@ -29,6 +37,7 @@ function SectionBlock({
 }: {
   section: SectionWithItems;
   onToggleItem: (itemId: string, checked: boolean) => void;
+  onToggleAll: (checked: boolean) => void;
   onDeleteItem: (itemId: string) => void;
   onAddItem: (label: string) => void;
   onUpdateTitle: (title: string) => void;
@@ -53,6 +62,19 @@ function SectionBlock({
   }
 
   const checked = section.items.filter((i) => i.checked).length;
+  const allChecked = section.items.length > 0 && checked === section.items.length;
+
+  function confirmToggleAll() {
+    if (section.items.length === 0) return;
+    const action = allChecked ? "desmarcar" : "marcar";
+    if (
+      confirm(
+        `¿Seguro que quieres ${action} todos los ítems de "${section.title}"?`
+      )
+    ) {
+      onToggleAll(!allChecked);
+    }
+  }
 
   return (
     <section className="rounded-lg border border-[var(--line)] bg-[var(--surface)] p-5">
@@ -103,6 +125,17 @@ function SectionBlock({
                 </span>
               )}
             </button>
+            {section.items.length > 0 && (
+              <button
+                type="button"
+                onClick={confirmToggleAll}
+                aria-label={allChecked ? "Desmarcar todos los ítems" : "Marcar todos los ítems"}
+                title={allChecked ? "Desmarcar todo" : "Marcar todo"}
+                className="focus-ring inline-flex min-h-11 shrink-0 items-center rounded-md px-2 text-xs font-semibold text-[var(--accent-dark)] transition hover:bg-[var(--accent-soft)]"
+              >
+                {allChecked ? "Nada" : "Todo"}
+              </button>
+            )}
             <button
               onClick={() => {
                 setTitleDraft(section.title);
@@ -215,20 +248,33 @@ export default function KitDetailPage() {
   const [newSectionTitle, setNewSectionTitle] = useState("");
 
   const fetchKit = useCallback(async () => {
+    const cached = readCachedKit(id);
+    if (cached) {
+      setKit(cached);
+      setLoading(false);
+    }
+
     const supabase = createClient();
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
+      data: { session },
+    } = await supabase.auth.getSession();
+    const user = session?.user ?? null;
     setCurrentUserId(user?.id ?? null);
 
-    const { data: kitData } = await supabase
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      setLoading(false);
+      return;
+    }
+
+    const { data: kitData, error: kitError } = await supabase
       .from("travel_kits")
       .select("*")
       .eq("id", id)
       .single();
 
     if (!kitData) {
-      router.push("/apps/travelkit");
+      if (!cached && kitError?.code === "PGRST116") router.push("/apps/travelkit");
+      setLoading(false);
       return;
     }
 
@@ -238,7 +284,7 @@ export default function KitDetailPage() {
       .eq("kit_id", id)
       .order("position");
 
-    setKit({
+    const freshKit: KitWithSections = {
       ...kitData,
       sections: (sections ?? []).map((s) => ({
         ...s,
@@ -246,95 +292,130 @@ export default function KitDetailPage() {
           (a, b) => a.position - b.position
         ),
       })),
-    });
+    };
+    setKit(freshKit);
+    cacheKit(freshKit);
     setLoading(false);
   }, [id, router]);
 
   useEffect(() => {
-    fetchKit();
+    queueMicrotask(() => void fetchKit());
+    const handleSync = () => void fetchKit();
+    window.addEventListener(OFFLINE_SYNC_COMPLETED, handleSync);
+    return () => window.removeEventListener(OFFLINE_SYNC_COMPLETED, handleSync);
   }, [fetchKit]);
+
+  useEffect(() => {
+    if (kit) cacheKit(kit);
+  }, [kit]);
 
   // ── Title ──
 
-  async function saveTitle() {
+  function saveTitle() {
     if (!kit || !titleDraft.trim()) return;
-    const supabase = createClient();
-    await supabase.from("travel_kits").update({ title: titleDraft.trim() }).eq("id", kit.id);
-    setKit((k) => (k ? { ...k, title: titleDraft.trim() } : null));
+    const title = titleDraft.trim();
+    setKit((k) => (k ? { ...k, title } : null));
+    if (currentUserId) patchCachedKitInList(currentUserId, kit.id, { title });
+    queueMutation({ table: "travel_kits", action: "update", targetId: kit.id, values: { title } });
     setEditingTitle(false);
   }
 
-  async function saveDest() {
+  function saveDest() {
     if (!kit) return;
-    const supabase = createClient();
-    await supabase.from("travel_kits").update({ destination: destDraft.trim() || null }).eq("id", kit.id);
-    setKit((k) => (k ? { ...k, destination: destDraft.trim() || null } : null));
+    const destination = destDraft.trim() || null;
+    setKit((k) => (k ? { ...k, destination } : null));
+    if (currentUserId) patchCachedKitInList(currentUserId, kit.id, { destination });
+    queueMutation({
+      table: "travel_kits",
+      action: "update",
+      targetId: kit.id,
+      values: { destination },
+    });
     setEditingDest(false);
   }
 
   // ── Sections ──
 
-  async function addSection() {
+  function addSection() {
     if (!kit || !newSectionTitle.trim()) return;
-    const supabase = createClient();
-    const { data } = await supabase
-      .from("checklist_sections")
-      .insert({ kit_id: kit.id, title: newSectionTitle.trim(), position: kit.sections.length })
-      .select()
-      .single();
-
-    if (data) {
-      setKit((k) => (k ? { ...k, sections: [...k.sections, { ...data, items: [] }] } : null));
-      setNewSectionTitle("");
-      setAddingSection(false);
-    }
+    const section: SectionWithItems = {
+      id: crypto.randomUUID(),
+      kit_id: kit.id,
+      title: newSectionTitle.trim(),
+      position: kit.sections.length,
+      created_at: new Date().toISOString(),
+      items: [],
+    };
+    setKit((k) => (k ? { ...k, sections: [...k.sections, section] } : null));
+    queueMutation({
+      table: "checklist_sections",
+      action: "insert",
+      values: {
+        id: section.id,
+        kit_id: section.kit_id,
+        title: section.title,
+        position: section.position,
+      },
+    });
+    setNewSectionTitle("");
+    setAddingSection(false);
   }
 
-  async function updateSectionTitle(sectionId: string, title: string) {
-    const supabase = createClient();
-    await supabase.from("checklist_sections").update({ title }).eq("id", sectionId);
+  function updateSectionTitle(sectionId: string, title: string) {
     setKit((k) =>
       k ? { ...k, sections: k.sections.map((s) => (s.id === sectionId ? { ...s, title } : s)) } : null
     );
+    queueMutation({
+      table: "checklist_sections",
+      action: "update",
+      targetId: sectionId,
+      values: { title },
+    });
   }
 
-  async function deleteSection(sectionId: string) {
+  function deleteSection(sectionId: string) {
     if (!confirm("¿Eliminar esta sección y todos sus ítems?")) return;
-    const supabase = createClient();
-    await supabase.from("checklist_sections").delete().eq("id", sectionId);
     setKit((k) => (k ? { ...k, sections: k.sections.filter((s) => s.id !== sectionId) } : null));
+    queueMutation({ table: "checklist_sections", action: "delete", targetId: sectionId });
   }
 
   // ── Items ──
 
-  async function addItem(sectionId: string, label: string) {
-    const supabase = createClient();
+  function addItem(sectionId: string, label: string) {
     const section = kit?.sections.find((s) => s.id === sectionId);
     if (!section) return;
-
-    const { data } = await supabase
-      .from("checklist_items")
-      .insert({ section_id: sectionId, label, checked: false, position: section.items.length })
-      .select()
-      .single();
-
-    if (data) {
-      setKit((k) =>
-        k
-          ? {
-              ...k,
-              sections: k.sections.map((s) =>
-                s.id === sectionId ? { ...s, items: [...s.items, data] } : s
-              ),
-            }
-          : null
-      );
-    }
+    const item: ChecklistItem = {
+      id: crypto.randomUUID(),
+      section_id: sectionId,
+      label,
+      checked: false,
+      position: section.items.length,
+      created_at: new Date().toISOString(),
+    };
+    setKit((k) =>
+      k
+        ? {
+            ...k,
+            sections: k.sections.map((s) =>
+              s.id === sectionId ? { ...s, items: [...s.items, item] } : s
+            ),
+          }
+        : null
+    );
+    queueMutation({
+      table: "checklist_items",
+      action: "insert",
+      values: {
+        id: item.id,
+        section_id: item.section_id,
+        label: item.label,
+        checked: item.checked,
+        position: item.position,
+      },
+    });
   }
 
-  async function toggleItem(sectionId: string, itemId: string, checked: boolean) {
-    const supabase = createClient();
-    await supabase.from("checklist_items").update({ checked }).eq("id", itemId);
+  function toggleItem(sectionId: string, itemId: string, checked: boolean) {
     setKit((k) =>
       k
         ? {
@@ -347,11 +428,48 @@ export default function KitDetailPage() {
           }
         : null
     );
+    queueMutation({
+      table: "checklist_items",
+      action: "update",
+      targetId: itemId,
+      values: { checked },
+    });
   }
 
-  async function deleteItem(sectionId: string, itemId: string) {
-    const supabase = createClient();
-    await supabase.from("checklist_items").delete().eq("id", itemId);
+  function toggleAllItems(sectionId: string, checked: boolean) {
+    const section = kit?.sections.find((entry) => entry.id === sectionId);
+    if (!section) return;
+
+    const changedItems = section.items.filter((item) => item.checked !== checked);
+    if (changedItems.length === 0) return;
+
+    setKit((current) =>
+      current
+        ? {
+            ...current,
+            sections: current.sections.map((entry) =>
+              entry.id === sectionId
+                ? {
+                    ...entry,
+                    items: entry.items.map((item) => ({ ...item, checked })),
+                  }
+                : entry
+            ),
+          }
+        : null
+    );
+
+    for (const item of changedItems) {
+      queueMutation({
+        table: "checklist_items",
+        action: "update",
+        targetId: item.id,
+        values: { checked },
+      });
+    }
+  }
+
+  function deleteItem(sectionId: string, itemId: string) {
     setKit((k) =>
       k
         ? {
@@ -362,6 +480,7 @@ export default function KitDetailPage() {
           }
         : null
     );
+    queueMutation({ table: "checklist_items", action: "delete", targetId: itemId });
   }
 
   // ── Render ──
@@ -483,6 +602,7 @@ export default function KitDetailPage() {
             key={section.id}
             section={section}
             onToggleItem={(itemId, checked) => toggleItem(section.id, itemId, checked)}
+            onToggleAll={(checked) => toggleAllItems(section.id, checked)}
             onDeleteItem={(itemId) => deleteItem(section.id, itemId)}
             onAddItem={(label) => addItem(section.id, label)}
             onUpdateTitle={(title) => updateSectionTitle(section.id, title)}

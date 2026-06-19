@@ -33,7 +33,8 @@ export function SharePanel({ kitId, isOwner, currentUserId }: SharePanelProps) {
   }, [kitId]);
 
   useEffect(() => {
-    fetchMembers();
+    const id = window.setTimeout(() => void fetchMembers(), 0);
+    return () => window.clearTimeout(id);
   }, [fetchMembers]);
 
   async function handleShare(e: React.FormEvent) {

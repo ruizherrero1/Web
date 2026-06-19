@@ -7,6 +7,11 @@ import type { TravelKit } from "@/lib/supabase/types";
 import { PageShell } from "@/components/PageShell";
 import { AuthForm } from "./_components/AuthForm";
 import { KitsGrid } from "./_components/KitsGrid";
+import {
+  cacheKits,
+  OFFLINE_SYNC_COMPLETED,
+  readCachedKits,
+} from "@/lib/travelkit/offline";
 
 function Skeleton() {
   return (
@@ -29,6 +34,14 @@ export default function TravelKitPage() {
   const [loading, setLoading] = useState(true);
 
   async function fetchKits(userId: string) {
+    const cached = readCachedKits(userId);
+    if (cached.length > 0) {
+      setKits(cached.filter((kit) => !kit.is_template));
+      setTemplates(cached.filter((kit) => kit.is_template));
+    }
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) return;
+
     const supabase = createClient();
     // Sin filtro por user_id: RLS devuelve los kits propios + los compartidos
     // conmigo. Las plantillas son siempre personales (solo su dueño es miembro).
@@ -38,6 +51,7 @@ export default function TravelKitPage() {
       .order("created_at", { ascending: false });
 
     if (data) {
+      cacheKits(userId, data as TravelKit[]);
       setKits(data.filter((k: TravelKit) => !k.is_template));
       setTemplates(data.filter((k: TravelKit) => k.is_template));
     }
@@ -46,7 +60,10 @@ export default function TravelKitPage() {
   useEffect(() => {
     const supabase = createClient();
 
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    // getSession se resuelve desde el almacenamiento local y permite abrir los
+    // viajes cacheados sin red. Supabase/RLS validará toda escritura al sincronizar.
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const user = session?.user ?? null;
       setUser(user);
       if (user) fetchKits(user.id).finally(() => setLoading(false));
       else setLoading(false);
@@ -65,8 +82,17 @@ export default function TravelKitPage() {
       }
     });
 
-    return () => subscription.unsubscribe();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const handleSync = () => {
+      void supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user.id) void fetchKits(session.user.id);
+      });
+    };
+    window.addEventListener(OFFLINE_SYNC_COMPLETED, handleSync);
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener(OFFLINE_SYNC_COMPLETED, handleSync);
+    };
   }, []);
 
   if (loading) return <Skeleton />;
