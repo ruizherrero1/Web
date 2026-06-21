@@ -236,6 +236,15 @@ function createStanding(team: string): Standing {
   };
 }
 
+function compareStandings(a: Standing, b: Standing) {
+  return (
+    b.points - a.points ||
+    b.goalDifference - a.goalDifference ||
+    b.goalsFor - a.goalsFor ||
+    a.team.localeCompare(b.team)
+  );
+}
+
 export function buildStandings(matches: EnrichedMatch[]) {
   const groups = new Map<string, Map<string, Standing>>();
 
@@ -281,17 +290,158 @@ export function buildStandings(matches: EnrichedMatch[]) {
       group,
       teams: Array.from(standings.values())
         .map((team) => ({ ...team, goalDifference: team.goalsFor - team.goalsAgainst }))
-        .sort(
-          (a, b) =>
-            b.points - a.points ||
-            b.goalDifference - a.goalDifference ||
-            b.goalsFor - a.goalsFor ||
-            a.team.localeCompare(b.team),
-        ),
+        .sort(compareStandings),
     }))
     .sort((a, b) => a.group.localeCompare(b.group));
 }
 
+type StandingGroup = {
+  group: string;
+  teams: Standing[];
+};
+
+type KnockoutRound = {
+  round: string;
+  matches: EnrichedMatch[];
+  firstTs: number;
+};
+
+type ThirdPlaceSlot = {
+  key: string;
+  eligibleGroups: string[];
+};
+
+function groupLetter(group: string) {
+  return group.replace(/^Group\s+/i, "").trim().toUpperCase();
+}
+
+function thirdPlaceGroups(slot: string) {
+  const named = slot.match(/^Third Place Group\s+([A-L](?:\/[A-L])+)$/i);
+  const compact = slot.match(/^3([A-L](?:\/[A-L])+)$/i);
+  return (named?.[1] ?? compact?.[1])?.toUpperCase().split("/") ?? null;
+}
+
+function isKnockoutPlaceholder(team: string) {
+  return (
+    /^Group [A-L] (?:Winner|2nd Place)$/i.test(team) ||
+    /^[12][A-L]$/i.test(team) ||
+    thirdPlaceGroups(team) !== null
+  );
+}
+
+function projectedTopTwo(team: string, standings: Map<string, Standing[]>) {
+  const named = team.match(/^Group ([A-L]) (Winner|2nd Place)$/i);
+  const compact = team.match(/^([12])([A-L])$/i);
+
+  if (named) {
+    return standings.get(named[1].toUpperCase())?.[named[2] === "Winner" ? 0 : 1]?.team;
+  }
+
+  if (compact) {
+    return standings.get(compact[2].toUpperCase())?.[Number(compact[1]) - 1]?.team;
+  }
+
+  return undefined;
+}
+
+function assignProjectedThirds(
+  slots: ThirdPlaceSlot[],
+  thirdTeams: { group: string; team: string }[],
+) {
+  const assignments = new Map<string, string>();
+  const orderedSlots = [...slots].sort((a, b) => {
+    const availableA = thirdTeams.filter((team) => a.eligibleGroups.includes(team.group)).length;
+    const availableB = thirdTeams.filter((team) => b.eligibleGroups.includes(team.group)).length;
+    return availableA - availableB;
+  });
+
+  function assign(index: number, usedGroups: Set<string>): boolean {
+    if (index === orderedSlots.length) return true;
+
+    const slot = orderedSlots[index];
+    for (const candidate of thirdTeams) {
+      if (
+        usedGroups.has(candidate.group) ||
+        !slot.eligibleGroups.includes(candidate.group)
+      ) {
+        continue;
+      }
+
+      assignments.set(slot.key, candidate.team);
+      usedGroups.add(candidate.group);
+      if (assign(index + 1, usedGroups)) return true;
+      usedGroups.delete(candidate.group);
+      assignments.delete(slot.key);
+    }
+
+    return false;
+  }
+
+  assign(0, new Set());
+  return assignments;
+}
+
+export function projectKnockoutRounds(
+  rounds: KnockoutRound[],
+  groups: StandingGroup[],
+) {
+  const standings = new Map(
+    groups.map((group) => [groupLetter(group.group), group.teams]),
+  );
+  const firstRound = rounds.find((round) => /round of 32/i.test(round.round));
+  if (!firstRound) return rounds;
+
+  const actualTeams = new Set(
+    firstRound.matches
+      .flatMap((match) => [match.team1, match.team2])
+      .filter((team) => !isKnockoutPlaceholder(team)),
+  );
+  const projectedThirds = groups
+    .map((group) => ({
+      group: groupLetter(group.group),
+      standing: group.teams[2],
+    }))
+    .filter(
+      (entry): entry is { group: string; standing: Standing } =>
+        Boolean(entry.standing) && !actualTeams.has(entry.standing.team),
+    )
+    .sort((a, b) => compareStandings(a.standing, b.standing))
+    .slice(0, 8)
+    .map((entry) => ({ group: entry.group, team: entry.standing.team }));
+
+  const thirdSlots = firstRound.matches.flatMap((match) =>
+    (["team1", "team2"] as const).flatMap((side) => {
+      const eligibleGroups = thirdPlaceGroups(match[side]);
+      return eligibleGroups
+        ? [{ key: `${match.id}:${side}`, eligibleGroups }]
+        : [];
+    }),
+  );
+  const thirdAssignments = assignProjectedThirds(thirdSlots, projectedThirds);
+
+  return rounds.map((round) => {
+    if (round !== firstRound) return round;
+
+    return {
+      ...round,
+      matches: round.matches.map((match) => {
+        function resolveTeam(side: "team1" | "team2") {
+          const team = match[side];
+          if (thirdPlaceGroups(team)) {
+            return thirdAssignments.get(`${match.id}:${side}`) ?? team;
+          }
+          return projectedTopTwo(team, standings) ?? team;
+        }
+
+        return {
+          ...match,
+          team1: resolveTeam("team1"),
+          team2: resolveTeam("team2"),
+        };
+      }),
+    };
+  });
+}
 export function buildGroupCards(matches: EnrichedMatch[]) {
   const groups = new Map<
     string,

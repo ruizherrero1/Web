@@ -28,6 +28,7 @@ import {
   liveMinuteLabel,
   matchScoreLabel,
   normalizeText,
+  projectKnockoutRounds,
   displayTeamName,
   roundLabels,
 } from "./helpers";
@@ -60,6 +61,7 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
   const [query, setQuery] = useState("");
   const [groupFilter, setGroupFilter] = useState("todos");
   const [stageFilter, setStageFilter] = useState<StageFilter>("todos");
+  const [classificationView, setClassificationView] = useState<"groups" | "bracket">("groups");
   const [spainOnly, setSpainOnly] = useState(false);
   const [scorers, setScorers] = useState<Scorer[] | null>(null);
   const [scorersError, setScorersError] = useState(false);
@@ -201,6 +203,14 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
   const groups = useMemo(() => buildStandings(matches), [matches]);
   const groupCards = useMemo(() => buildGroupCards(matches), [matches]);
   const knockoutRounds = useMemo(() => buildKnockoutRounds(matches), [matches]);
+  const projectedKnockoutRounds = useMemo(
+    () => projectKnockoutRounds(knockoutRounds, groups),
+    [knockoutRounds, groups],
+  );
+  const groupStageMatches = matches.filter(isGroupMatch);
+  const groupStageComplete =
+    groupStageMatches.length > 0 &&
+    groupStageMatches.every((match) => match.status === "finished");
   const stageFilterOptions = useMemo(
     () => [
       { key: "todos" as StageFilter, label: "Todo" },
@@ -425,7 +435,12 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
                     : "text-[var(--wc-muted)] hover:bg-[var(--wc-card-bg)] hover:text-[var(--wc-text)]"
                 }`}
                 type="button"
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  if (tab.id === "clasificacion") {
+                    setClassificationView(groupStageComplete ? "bracket" : "groups");
+                  }
+                }}
               >
                 <span className="sm:hidden">{tab.short}</span>
                 <span className="hidden sm:inline">{tab.label}</span>
@@ -566,10 +581,48 @@ export function MundialApp({ initialData = null }: MundialAppProps) {
         ) : null}
 
         {activeTab === "clasificacion" ? (
-          <section className="mt-6 grid gap-5 xl:grid-cols-2">
-            {groups.map((group) => (
-              <GroupTable key={group.group} group={group.group} teams={group.teams} />
-            ))}
+          <section className="mt-6">
+            <div className="grid grid-cols-2 rounded-lg border border-[var(--wc-border)] bg-[var(--wc-card-bg)] p-1 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setClassificationView("groups")}
+                className={`focus-ring min-h-10 rounded-md px-3 text-sm font-bold transition ${
+                  classificationView === "groups"
+                    ? "bg-[var(--wc-accent)] text-[var(--wc-accent-fg)] shadow-sm"
+                    : "text-[var(--wc-muted)] hover:bg-[var(--wc-panel-bg)] hover:text-[var(--wc-text)]"
+                }`}
+              >
+                Grupos
+              </button>
+              <button
+                type="button"
+                onClick={() => setClassificationView("bracket")}
+                className={`focus-ring min-h-10 rounded-md px-3 text-sm font-bold transition ${
+                  classificationView === "bracket"
+                    ? "bg-[var(--wc-accent)] text-[var(--wc-accent-fg)] shadow-sm"
+                    : "text-[var(--wc-muted)] hover:bg-[var(--wc-panel-bg)] hover:text-[var(--wc-text)]"
+                }`}
+              >
+                Tabla
+              </button>
+            </div>
+
+            {classificationView === "groups" ? (
+              <div className="mt-5 grid gap-5 xl:grid-cols-2">
+                {groups.map((group) => (
+                  <GroupTable key={group.group} group={group.group} teams={group.teams} />
+                ))}
+              </div>
+            ) : (
+              <div className="mt-5">
+                {!groupStageComplete ? (
+                  <p className="mb-4 text-xs font-semibold text-[var(--wc-muted)]">
+                    Proyección según la clasificación actual
+                  </p>
+                ) : null}
+                <KnockoutBracket rounds={projectedKnockoutRounds} />
+              </div>
+            )}
           </section>
         ) : null}
 
