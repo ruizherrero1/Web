@@ -50,6 +50,15 @@ type FootballDataResponse = {
 type EspnCompetitor = {
   homeAway?: "home" | "away";
   score?: string;
+  winner?: boolean;
+  shootoutScore?: string | number | null;
+  penaltyShootoutScore?: string | number | null;
+  penaltyScore?: string | number | null;
+  linescores?: Array<{
+    value?: string | number | null;
+    displayValue?: string | null;
+    period?: number;
+  }>;
   team?: {
     id?: string;
     displayName?: string | null;
@@ -225,6 +234,22 @@ function normalizeEspnStatus(event: EspnEvent) {
   return "IN_PLAY";
 }
 
+function numericScore(value: unknown) {
+  if (value === null || value === undefined || value === "") return undefined;
+  const score = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(score) ? score : undefined;
+}
+
+function competitorShootoutScore(competitor?: EspnCompetitor) {
+  const direct =
+    numericScore(competitor?.shootoutScore) ??
+    numericScore(competitor?.penaltyShootoutScore) ??
+    numericScore(competitor?.penaltyScore);
+  if (typeof direct === "number") return direct;
+
+  const shootoutLine = competitor?.linescores?.find((line) => line.period === 5);
+  return numericScore(shootoutLine?.value ?? shootoutLine?.displayValue);
+}
 function normalizeEspnTeam(competitor?: EspnCompetitor) {
   const name =
     competitor?.team?.displayName ??
@@ -263,6 +288,26 @@ function normalizeEspnMatch(event: EspnEvent): RawMatch | null {
     }
   }
 
+  const shootoutGoalsByTeam = new Map<string, number>();
+  for (const detail of competition?.details ?? []) {
+    if (!detail.shootout || !detail.scoringPlay || !detail.team?.id) continue;
+    shootoutGoalsByTeam.set(
+      detail.team.id,
+      (shootoutGoalsByTeam.get(detail.team.id) ?? 0) + 1,
+    );
+  }
+
+  const homePenalties =
+    competitorShootoutScore(home) ??
+    (home.team?.id ? shootoutGoalsByTeam.get(home.team.id) : undefined);
+  const awayPenalties =
+    competitorShootoutScore(away) ??
+    (away.team?.id ? shootoutGoalsByTeam.get(away.team.id) : undefined);
+  const penaltyScore =
+    typeof homePenalties === "number" && typeof awayPenalties === "number"
+      ? ([homePenalties, awayPenalties] as ScoreTuple)
+      : undefined;
+
   const goals: GoalEvent[] = [];
   for (const detail of competition?.details ?? []) {
     if (!detail.scoringPlay || detail.shootout) continue;
@@ -287,7 +332,9 @@ function normalizeEspnMatch(event: EspnEvent): RawMatch | null {
     team2: normalizeEspnTeam(away),
     ground: competition?.venue?.fullName ?? undefined,
     matchStatus,
-    score: hasScore ? { ft: [homeScore, awayScore] } : undefined,
+    score: hasScore
+      ? { ft: [homeScore, awayScore], ...(penaltyScore ? { p: penaltyScore } : {}) }
+      : undefined,
     ...(goals.length > 0 ? { goals } : {}),
   };
 }
@@ -321,6 +368,17 @@ function kickoffTimestamp(match: RawMatch) {
   return Date.UTC(year, month - 1, day, hours, minutes) - offset * 60_000;
 }
 
+function mergeScore(baseScore?: RawMatch["score"], liveScore?: RawMatch["score"]) {
+  if (!baseScore) return liveScore;
+  if (!liveScore) return baseScore;
+  return {
+    ...baseScore,
+    ...liveScore,
+    ...(liveScore.ht ?? baseScore.ht ? { ht: liveScore.ht ?? baseScore.ht } : {}),
+    ...(liveScore.et ?? baseScore.et ? { et: liveScore.et ?? baseScore.et } : {}),
+    ...(liveScore.p ?? baseScore.p ? { p: liveScore.p ?? baseScore.p } : {}),
+  };
+}
 function mergeMatches(
   baseMatches: RawMatch[],
   liveMatches: RawMatch[],
@@ -361,6 +419,7 @@ function mergeMatches(
       round: baseMatch?.round ?? liveMatch.round,
       group: baseMatch?.group ?? liveMatch.group,
       ground: liveMatch.ground ?? baseMatch?.ground,
+      score: mergeScore(baseMatch?.score, liveMatch.score),
     };
 
     if (matchesExisting) {

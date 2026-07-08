@@ -11,6 +11,7 @@ import {
   groupShortName,
   liveMinuteLabel,
   matchScoreLabel,
+  penaltyWinnerLabel,
   roundLabels,
 } from "./helpers";
 import { GROUP_COLORS, themeConfigs } from "./theme";
@@ -217,6 +218,13 @@ export function LiveBadge({ minute }: { minute?: string }) {
   );
 }
 
+function PenaltyWinnerNote({ label }: { label: string }) {
+  return (
+    <p className="mx-auto mt-2 inline-flex max-w-full items-center rounded-md border border-[var(--wc-border)] bg-[var(--wc-panel-bg)] px-2 py-1 text-[10px] font-black uppercase tracking-[0.06em] text-[var(--wc-score-text)]">
+      <span className="truncate">{label}</span>
+    </p>
+  );
+}
 export function ScorersTable({ scorers }: { scorers: Scorer[] }) {
   // Los datos de ESPN no traen asistencias: ocultamos columnas sin datos.
   const hasAssists = scorers.some((scorer) => scorer.assists > 0);
@@ -310,6 +318,7 @@ function GoalsPanel({ match }: { match: EnrichedMatch }) {
 
 export function MatchRow({ match, domId }: { match: EnrichedMatch; domId?: string }) {
   const score = matchScoreLabel(match);
+  const penaltyWinner = penaltyWinnerLabel(match);
   const hasGoals = (match.goals?.length ?? 0) > 0;
   const canExpand = hasGoals && (match.status === "live" || match.status === "finished");
   const [expanded, setExpanded] = useState(false);
@@ -345,13 +354,18 @@ export function MatchRow({ match, domId }: { match: EnrichedMatch; domId?: strin
         <div className="min-w-0 text-right text-[13px] font-bold text-[var(--wc-text)] sm:text-sm">
           <TeamLabel team={match.team1} align="right" />
         </div>
-        <div className="shrink-0 rounded bg-[var(--wc-score-bg)] px-2 py-1 text-xs font-black text-[var(--wc-score-text)] sm:px-2.5">
+        <div className="shrink-0 whitespace-nowrap rounded bg-[var(--wc-score-bg)] px-2 py-1 text-xs font-black text-[var(--wc-score-text)] sm:px-2.5">
           {score}
         </div>
         <div className="min-w-0 text-[13px] font-bold text-[var(--wc-text)] sm:text-sm">
           <TeamLabel team={match.team2} />
         </div>
       </div>
+      {penaltyWinner ? (
+        <div className="text-center">
+          <PenaltyWinnerNote label={penaltyWinner} />
+        </div>
+      ) : null}
       {match.ground ? (
         <p className="mt-1.5 text-center text-xs text-[var(--wc-muted)]">{match.ground}</p>
       ) : null}
@@ -422,6 +436,7 @@ export function KnockoutRoundCard({
 
 export function MiniMatchRow({ match }: { match: EnrichedMatch }) {
   const score = matchScoreLabel(match);
+  const penaltyWinner = penaltyWinnerLabel(match);
   const hasGoals = (match.goals?.length ?? 0) > 0;
   const canExpand = hasGoals && (match.status === "live" || match.status === "finished");
   const [expanded, setExpanded] = useState(false);
@@ -459,13 +474,18 @@ export function MiniMatchRow({ match }: { match: EnrichedMatch }) {
         <div className="min-w-0 text-right text-[11px] font-bold text-[var(--wc-text)] sm:text-xs">
           <TeamLabel team={match.team1} compact align="right" />
         </div>
-        <div className="shrink-0 rounded bg-[var(--wc-score-bg)] px-1.5 py-1 text-[11px] font-black text-[var(--wc-score-text)] sm:px-2 sm:text-xs">
+        <div className="shrink-0 whitespace-nowrap rounded bg-[var(--wc-score-bg)] px-1.5 py-1 text-[11px] font-black text-[var(--wc-score-text)] sm:px-2 sm:text-xs">
           {score}
         </div>
         <div className="min-w-0 text-[11px] font-bold text-[var(--wc-text)] sm:text-xs">
           <TeamLabel team={match.team2} compact />
         </div>
       </div>
+      {penaltyWinner ? (
+        <div className="text-center">
+          <PenaltyWinnerNote label={penaltyWinner} />
+        </div>
+      ) : null}
       {expanded && hasGoals ? <GoalsPanel match={match} /> : null}
     </div>
   );

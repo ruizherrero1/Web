@@ -7,6 +7,7 @@ import {
   formatMadridTime,
   isTeamMatch,
   liveMinuteLabel,
+  penaltyWinnerLabel,
   roundLabels,
 } from "./helpers";
 import type { EnrichedMatch } from "./types";
@@ -66,6 +67,7 @@ function BracketMatch({ match }: { match: EnrichedMatch }) {
       : -1;
   const isSpain = isTeamMatch(match, SPAIN_TEAM);
   const isLive = match.status === "live";
+  const penaltyWinner = penaltyWinnerLabel(match);
 
   return (
     <article
@@ -95,6 +97,11 @@ function BracketMatch({ match }: { match: EnrichedMatch }) {
         penalties={penalties?.[1]}
         winner={winnerIndex === 1}
       />
+      {penaltyWinner ? (
+        <p className="mt-1.5 truncate text-center text-[9px] font-black uppercase tracking-[0.06em] text-[var(--wc-score-text)]">
+          {penaltyWinner}
+        </p>
+      ) : null}
     </article>
   );
 }

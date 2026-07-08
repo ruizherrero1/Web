@@ -152,11 +152,29 @@ export function getStatus(match: RawMatch, startsAt: Date): MatchStatus {
 export function scoreLabel(score?: Score) {
   if (!score?.ft) return null;
   const suffix = score.p
-    ? ` pen. ${score.p[0]}-${score.p[1]}`
+    ? ` (pen. ${score.p[0]} - ${score.p[1]})`
     : score.et
       ? " prórroga"
       : "";
   return `${score.ft[0]} - ${score.ft[1]}${suffix}`;
+}
+
+export function penaltyWinnerTeam(match: RawMatch) {
+  if (
+    match.matchStatus &&
+    ["IN_PLAY", "PAUSED", "EXTRA_TIME", "PENALTY_SHOOTOUT"].includes(match.matchStatus)
+  ) {
+    return null;
+  }
+
+  const penalties = match.score?.p;
+  if (!penalties || penalties[0] === penalties[1]) return null;
+  return penalties[0] > penalties[1] ? match.team1 : match.team2;
+}
+
+export function penaltyWinnerLabel(match: RawMatch) {
+  const winner = penaltyWinnerTeam(match);
+  return winner ? `Gana ${displayTeamName(winner)} por penaltis` : null;
 }
 
 export function matchScoreLabel(match: EnrichedMatch) {
