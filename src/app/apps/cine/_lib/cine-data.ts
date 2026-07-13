@@ -43,7 +43,6 @@ export const demoTitles: CineTitle[] = [
     imdbVotes: 640000,
     tmdbPopularity: 94,
     rtTomatometer: 92,
-    rtPopcornmeter: 95,
     availability: [
       { provider: "max", type: "included" },
       { provider: "prime", type: "rent" }
@@ -69,7 +68,6 @@ export const demoTitles: CineTitle[] = [
     imdbVotes: 290000,
     tmdbPopularity: 88,
     rtTomatometer: 96,
-    rtPopcornmeter: 84,
     availability: [{ provider: "disney", type: "included" }],
     pendingCategories: ["Series pendientes", "Para ver juntos"],
     addedBy: "RR",
@@ -92,7 +90,6 @@ export const demoTitles: CineTitle[] = [
     imdbVotes: 930000,
     tmdbPopularity: 78,
     rtTomatometer: 93,
-    rtPopcornmeter: 91,
     availability: [
       { provider: "movistar", type: "included" },
       { provider: "prime", type: "buy" }
@@ -118,7 +115,6 @@ export const demoTitles: CineTitle[] = [
     imdbVotes: 270000,
     tmdbPopularity: 91,
     rtTomatometer: 94,
-    rtPopcornmeter: 90,
     availability: [{ provider: "prime", type: "included" }],
     pendingCategories: ["Series pendientes", "Alta prioridad"],
     addedBy: "LB",
@@ -141,7 +137,6 @@ export const demoTitles: CineTitle[] = [
     imdbVotes: 150000,
     tmdbPopularity: 66,
     rtTomatometer: 90,
-    rtPopcornmeter: 83,
     availability: [{ provider: "netflix", type: "included" }],
     pendingCategories: ["Para ver juntos"],
     addedBy: "RR",
@@ -164,7 +159,6 @@ export const demoTitles: CineTitle[] = [
     imdbVotes: 330000,
     tmdbPopularity: 72,
     rtTomatometer: 92,
-    rtPopcornmeter: 79,
     availability: [
       { provider: "disney", type: "included" },
       { provider: "prime", type: "rent" }

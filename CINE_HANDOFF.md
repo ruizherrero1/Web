@@ -38,6 +38,14 @@ Notas externas (OMDb):
 
 ## Cambios recientes
 
+### 2026-07-13 - Deuda menor: limpieza + consenso + offline writes
+
+Rama `cine/pwa` (mismo stack; ultimo commit).
+
+- Eliminado `rt_popcornmeter` del tipo, del catalog y de los datos demo (OMDb no lo aporta; la columna DB queda huerfana, se puede dropear cuando se quiera).
+- Recomendador "Hoy": ahora combina el blend de notas (60%) con **consenso por afinidad de genero RR/LB** (40%). Para "los dos" usa el minimo de las afinidades previstas (favorece que guste a ambos).
+- PWA fase 2: **cola de escrituras offline** (`_lib/offline.ts`). Nota/visto/pendiente sin conexion se encolan en localStorage y se reproducen al reconectar (`flushQueue` en `CineApp`). El badge muestra "N por sincronizar" / "Sincronizando".
+
 ### 2026-07-13 - PWA real con service worker
 
 Rama `cine/pwa` (apilada sobre `cine/today-recommender`).

@@ -76,7 +76,6 @@ export type CineTitle = {
   metascore?: number;
   tmdbPopularity: number;
   rtTomatometer?: number;
-  rtPopcornmeter?: number;
   ratingsUpdatedAt?: string;
   availability: Availability[];
   pendingCategories: PendingCategory[];

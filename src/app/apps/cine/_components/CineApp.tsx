@@ -23,7 +23,12 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { demoTitles, pendingCategories, profiles, providers } from "../_lib/cine-data";
+import { enqueueMutation, flushQueue } from "../_lib/offline";
 import type { CineTitle, MediaKind, MonetizationType, PendingCategory, ProfileKey, ProviderKey, TitleDetail, WatchStatus } from "../_lib/types";
+
+function isOffline() {
+  return typeof navigator !== "undefined" && !navigator.onLine;
+}
 
 type TabKey = "home" | "explore" | "today" | "pending" | "ratings";
 
@@ -133,6 +138,20 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
     void loadCatalog();
   }, [accessToken]);
 
+  useEffect(() => {
+    if (!accessToken) return;
+    // Replay any queued offline writes now and whenever the connection returns.
+    const flush = async () => {
+      if (isOffline()) return;
+      const flushed = await flushQueue(accessToken);
+      if (flushed > 0) await loadCatalog();
+    };
+    void flush();
+    window.addEventListener("online", flush);
+    return () => window.removeEventListener("online", flush);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessToken]);
+
   const selectedTitle = titles.find((title) => title.id === selectedTitleId) ?? titles[0];
 
   const filteredTitles = useMemo(() => {
@@ -171,28 +190,30 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
 
   const persistState = async (title: CineTitle, state: { status?: WatchStatus; rating?: number | null; scope?: "me" | "both" }) => {
     if (!accessToken || !title.tmdbId) return;
+    const body = { tmdbId: title.tmdbId, mediaType: title.kind, ...state };
+
+    // Offline: keep the optimistic change and queue it to sync on reconnect.
+    if (isOffline()) {
+      enqueueMutation({ kind: "state", body });
+      setSyncMessage("Sin conexion: el cambio se guardara al reconectar.");
+      return;
+    }
+
     try {
       const response = await fetch("/api/cine/state", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          tmdbId: title.tmdbId,
-          mediaType: title.kind,
-          ...state,
-        }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify(body),
       });
-      // The list updates optimistically; on failure re-sync from the server so the
-      // UI never keeps a change that was not persisted.
+      // On a server rejection re-sync so the UI never keeps an unpersisted change.
       if (!response.ok) {
         setCatalogError("No se pudo guardar el cambio. Recargando estado real.");
         await loadCatalog();
       }
     } catch {
-      setCatalogError("Sin conexion al guardar. Recargando estado real.");
-      await loadCatalog();
+      // Network dropped mid-request: queue it instead of losing the change.
+      enqueueMutation({ kind: "state", body });
+      setSyncMessage("Sin conexion: el cambio se guardara al reconectar.");
     }
   };
 
@@ -234,19 +255,25 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
       })
     );
 
-    const response = await fetch("/api/cine/pending", {
-      method: action === "add" ? "POST" : "DELETE",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({
-        tmdbId: currentTitle.tmdbId,
-        mediaType: currentTitle.kind,
-        category,
-      }),
-    });
-    if (!response.ok) await loadCatalog();
+    const body = { tmdbId: currentTitle.tmdbId, mediaType: currentTitle.kind, category };
+
+    if (isOffline()) {
+      enqueueMutation({ kind: "pending", action, body });
+      setSyncMessage("Sin conexion: el cambio se guardara al reconectar.");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/cine/pending", {
+        method: action === "add" ? "POST" : "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) await loadCatalog();
+    } catch {
+      enqueueMutation({ kind: "pending", action, body });
+      setSyncMessage("Sin conexion: el cambio se guardara al reconectar.");
+    }
   };
   const updateRating = (titleId: string, profile: ProfileKey, rating: number | null) => {
     const currentTitle = titles.find((title) => title.id === titleId);
@@ -693,6 +720,9 @@ function TodayView({
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [titles]);
 
+  const affinityRR = useMemo(() => genreAffinity(titles, "RR"), [titles]);
+  const affinityLB = useMemo(() => genreAffinity(titles, "LB"), [titles]);
+
   const picks = useMemo(() => {
     const candidates = titles.filter((title) => {
       const unseen = scope === "both"
@@ -706,10 +736,20 @@ function TodayView({
     });
 
     return candidates
-      .map((title) => ({ title, score: blendedScore(title) + seededJitter(title.id, seed) }))
+      .map((title) => {
+        const base = blendedScore(title);
+        // Consensus by learned genre taste: for "both" favour titles both would like (min),
+        // for a single user use only their own affinity. Falls back to the rating blend.
+        const consensus =
+          scope === "both"
+            ? consensusAffinity(title, affinityRR, affinityLB)
+            : predictedAffinity(title, activeProfile === "RR" ? affinityRR : affinityLB);
+        const score = base * 0.6 + (consensus ?? base) * 0.4 + seededJitter(title.id, seed);
+        return { title, score };
+      })
       .sort((left, right) => right.score - left.score)
       .slice(0, 5);
-  }, [titles, scope, activeProfile, selectedProviders, maxMinutes, genre, seed]);
+  }, [titles, scope, activeProfile, selectedProviders, maxMinutes, genre, seed, affinityRR, affinityLB]);
 
   return (
     <div className="space-y-4">
@@ -1538,6 +1578,41 @@ function passesWatchFilter(title: CineTitle, watch: WatchFilter, activeProfile: 
   if (watch === "watched_lb") return title.personal.LB.status === "watched";
   if (watch === "no_rating_mine") return !title.personal[activeProfile].rating;
   return title.pendingCategories.length > 0;
+}
+
+// Average rating a profile has given, per genre (learned taste on a 1-10 scale).
+function genreAffinity(titles: CineTitle[], profile: ProfileKey) {
+  const sums = new Map<string, { total: number; count: number }>();
+  for (const title of titles) {
+    const rating = title.personal[profile].rating;
+    if (!rating) continue;
+    for (const genre of title.genres) {
+      const entry = sums.get(genre) ?? { total: 0, count: 0 };
+      entry.total += rating;
+      entry.count += 1;
+      sums.set(genre, entry);
+    }
+  }
+  const affinity = new Map<string, number>();
+  for (const [genre, { total, count }] of sums) affinity.set(genre, total / count);
+  return affinity;
+}
+
+// Predicted score for a title from a profile's genre affinity; undefined if no signal.
+function predictedAffinity(title: CineTitle, affinity: Map<string, number>) {
+  const values = title.genres.map((genre) => affinity.get(genre)).filter((value): value is number => value !== undefined);
+  if (!values.length) return undefined;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+// For "both": favour titles both would like by taking the lower predicted affinity.
+function consensusAffinity(title: CineTitle, affinityRR: Map<string, number>, affinityLB: Map<string, number>) {
+  const rr = predictedAffinity(title, affinityRR);
+  const lb = predictedAffinity(title, affinityLB);
+  if (rr === undefined && lb === undefined) return undefined;
+  if (rr === undefined) return lb;
+  if (lb === undefined) return rr;
+  return Math.min(rr, lb);
 }
 
 // Blend of every available rating source on a 0-10 scale; unknown => neutral 5.
