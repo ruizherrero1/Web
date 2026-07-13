@@ -146,12 +146,12 @@ function mapTmdbItem(
     media_type: mediaType,
     title: englishTitle,
     original_title: spanishTitle && spanishTitle !== englishTitle ? spanishTitle : originalTitle,
-    overview: item.overview ?? spanishItem?.overview ?? "",
+    overview: cleanText(item.overview ?? spanishItem?.overview ?? ""),
     poster_path: item.poster_path ?? spanishItem?.poster_path ?? "",
     backdrop_path: item.backdrop_path ?? spanishItem?.backdrop_path ?? "",
     release_year: yearSource ? Number(yearSource.slice(0, 4)) : null,
     runtime_label: mediaType === "movie" ? "Movie" : "Series",
-    genres: (item.genre_ids ?? []).map((id) => genreMap.get(id)).filter(Boolean) as string[],
+    genres: (item.genre_ids ?? []).map((id) => cleanText(genreMap.get(id))).filter(Boolean) as string[],
     tmdb_vote: item.vote_average ? Number(item.vote_average.toFixed(1)) : null,
     tmdb_popularity: item.popularity ?? 0,
     imdb_votes: item.vote_count ?? null,
@@ -162,9 +162,20 @@ function mapTmdbItem(
 }
 
 function cleanTitle(value?: string) {
-  return value?.trim() || undefined;
+  const text = cleanText(value).trim();
+  return text || undefined;
 }
 
+function cleanText(value?: string) {
+  if (!value) return "";
+  if (!/[\u00c3\u00c2]/.test(value)) return value;
+
+  try {
+    return Buffer.from(value, "latin1").toString("utf8");
+  } catch {
+    return value;
+  }
+}
 function mergeAvailability(items: Availability[], next: Availability) {
   if (items.some((item) => item.provider === next.provider && item.type === next.type)) return items;
   return [...items, next];

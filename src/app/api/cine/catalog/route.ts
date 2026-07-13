@@ -20,6 +20,7 @@ type DbTitle = {
   imdb_votes: number | null;
   rt_tomatometer: number | null;
   rt_popcornmeter: number | null;
+  search_titles: string[] | null;
 };
 
 type DbAvailability = {
@@ -112,15 +113,16 @@ function mapTitles(
     return {
       id: title.id,
       tmdbId: title.tmdb_id,
-      title: title.title,
-      originalTitle: title.original_title ?? undefined,
+      title: cleanText(title.title),
+      originalTitle: cleanText(title.original_title ?? undefined),
+      searchTitles: unique([...(title.search_titles ?? []), title.original_title ?? ""].map(cleanText).filter(Boolean)),
       kind: title.media_type,
       year: title.release_year ?? 0,
       runtimeLabel: title.runtime_label ?? (title.media_type === "movie" ? "Pelicula" : "Serie"),
-      genres: title.genres ?? [],
+      genres: (title.genres ?? []).map(cleanText),
       posterPath: title.poster_path,
       backdropPath: title.backdrop_path ?? "",
-      overview: title.overview ?? "",
+      overview: cleanText(title.overview ?? ""),
       imdbRating: Number(title.imdb_rating ?? title.tmdb_vote ?? 0) || undefined,
       imdbVotes: title.imdb_votes ?? undefined,
       rtTomatometer: title.rt_tomatometer ?? undefined,
@@ -164,4 +166,15 @@ function groupBy<T>(items: T[], getKey: (item: T) => string) {
 
 function unique<T>(items: T[]) {
   return [...new Set(items)];
+}
+
+function cleanText(value?: string) {
+  if (!value) return value ?? "";
+  if (!/[\u00c3\u00c2]/.test(value)) return value;
+
+  try {
+    return Buffer.from(value, "latin1").toString("utf8");
+  } catch {
+    return value;
+  }
 }
