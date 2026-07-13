@@ -8,7 +8,11 @@ import { CINE_QUEUE_CHANGED, getPendingCount } from "../_lib/offline";
 // catalog) and shows a small badge when the device is offline or there are
 // writes queued to sync. Reads work offline; queued writes replay on reconnect.
 export function CineServiceWorker({ children }: { children: React.ReactNode }) {
-  const [online, setOnline] = useState(() => (typeof navigator === "undefined" ? true : navigator.onLine));
+  // Must render the same on the server and on the first client render, or the
+  // hydration mismatch breaks the whole /apps/cine subtree. Node 22 exposes a
+  // `navigator` global (with `onLine` undefined), so we can't read it during
+  // render: start "online" and correct it in the effect once mounted.
+  const [online, setOnline] = useState(true);
   const [pending, setPending] = useState(0);
 
   useEffect(() => {
@@ -19,6 +23,8 @@ export function CineServiceWorker({ children }: { children: React.ReactNode }) {
     }
 
     const refreshPending = () => setPending(getPendingCount());
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- client-only correction after mount
+    setOnline(navigator.onLine);
     refreshPending();
     const handleOnline = () => setOnline(true);
     const handleOffline = () => setOnline(false);
