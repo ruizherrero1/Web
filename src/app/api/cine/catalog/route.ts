@@ -1,36 +1,55 @@
 import { NextResponse } from "next/server";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Availability, CineTitle, MediaKind, ProfileKey, ProviderKey } from "@/app/apps/cine/_lib/types";
-import { appendQuery, getTmdbAuth, providerTmdbIds, requireCineProfile } from "../_lib";
+import type { Availability, CineTitle, MediaKind, PendingCategory, ProfileKey, ProviderKey, WatchStatus } from "@/app/apps/cine/_lib/types";
+import { requireCineProfile } from "../_lib";
 
-type TmdbItem = {
-  id: number;
-  title?: string;
-  name?: string;
-  original_title?: string;
-  original_name?: string;
-  overview?: string;
-  poster_path?: string | null;
-  backdrop_path?: string | null;
-  release_date?: string;
-  first_air_date?: string;
-  genre_ids?: number[];
-  vote_average?: number;
-  popularity?: number;
-};
-
-type CineMark = {
-  user_id: string;
+type DbTitle = {
+  id: string;
   tmdb_id: number;
   media_type: MediaKind;
-  status: "none" | "watching" | "watched" | "abandoned";
+  title: string;
+  original_title: string | null;
+  overview: string | null;
+  poster_path: string;
+  backdrop_path: string | null;
+  release_year: number | null;
+  runtime_label: string | null;
+  genres: string[] | null;
+  tmdb_vote: number | null;
+  tmdb_popularity: number | null;
+  imdb_rating: number | null;
+  imdb_votes: number | null;
+  rt_tomatometer: number | null;
+  rt_popcornmeter: number | null;
+};
+
+type DbAvailability = {
+  title_id: string;
+  provider_key: ProviderKey;
+  monetization: Availability["type"];
+};
+
+type DbState = {
+  title_id: string;
+  status: WatchStatus;
   rating: number | null;
   watched_at: string | null;
   cine_profiles?: { initials: ProfileKey } | null;
 };
 
-const movieGenres = new Map<number, string>();
-const tvGenres = new Map<number, string>();
+type LegacyMark = {
+  tmdb_id: number;
+  media_type: MediaKind;
+  status: WatchStatus;
+  rating: number | null;
+  watched_at: string | null;
+  cine_profiles?: { initials: ProfileKey } | null;
+};
+
+type DbPending = {
+  title_id: string;
+  cine_pending_categories?: { name: PendingCategory } | null;
+  cine_profiles?: { initials: ProfileKey } | null;
+};
 
 export const dynamic = "force-dynamic";
 
@@ -39,11 +58,36 @@ export async function GET(request: Request) {
   if ("error" in auth) return auth.error;
 
   try {
-    const marks = await loadMarks(auth.supabase);
-    const titles = await loadTmdbCatalog(marks);
+    const { data: titles, error: titlesError } = await auth.supabase
+      .from("cine_titles")
+      .select(
+        "id, tmdb_id, media_type, title, original_title, overview, poster_path, backdrop_path, release_year, runtime_label, genres, tmdb_vote, tmdb_popularity, imdb_rating, imdb_votes, rt_tomatometer, rt_popcornmeter"
+      )
+      .order("tmdb_popularity", { ascending: false })
+      .limit(2500);
+
+    if (titlesError) throw titlesError;
+
+    const [availabilityResult, statesResult, legacyMarksResult, pendingResult] = await Promise.all([
+      auth.supabase.from("cine_availability").select("title_id, provider_key, monetization").eq("region", "ES"),
+      auth.supabase.from("cine_user_title_states").select("title_id, status, rating, watched_at, cine_profiles(initials)"),
+      auth.supabase.from("cine_user_marks").select("tmdb_id, media_type, status, rating, watched_at, cine_profiles(initials)"),
+      auth.supabase.from("cine_pending_items").select("title_id, cine_pending_categories(name), cine_profiles(initials)"),
+    ]);
+
+    if (availabilityResult.error) throw availabilityResult.error;
+    if (statesResult.error) throw statesResult.error;
+    if (legacyMarksResult.error) throw legacyMarksResult.error;
+    if (pendingResult.error) throw pendingResult.error;
 
     return NextResponse.json({
-      titles,
+      titles: mapTitles(
+        (titles ?? []) as DbTitle[],
+        (availabilityResult.data ?? []) as unknown as DbAvailability[],
+        (statesResult.data ?? []) as unknown as DbState[],
+        (legacyMarksResult.data ?? []) as unknown as LegacyMark[],
+        (pendingResult.data ?? []) as unknown as DbPending[]
+      ),
       attribution: "Source: TMDB. Streaming availability data is powered by TMDB/JustWatch.",
     });
   } catch (error) {
@@ -54,134 +98,76 @@ export async function GET(request: Request) {
   }
 }
 
-async function loadMarks(supabase: SupabaseClient) {
-  const { data, error } = await supabase
-    .from("cine_user_marks")
-    .select("user_id, tmdb_id, media_type, status, rating, watched_at, cine_profiles(initials)");
+function mapTitles(
+  titles: DbTitle[],
+  availability: DbAvailability[],
+  states: DbState[],
+  legacyMarks: LegacyMark[],
+  pending: DbPending[]
+): CineTitle[] {
+  const availabilityByTitle = groupBy(availability, (item) => item.title_id);
+  const statesByTitle = groupBy(states, (item) => item.title_id);
+  const pendingByTitle = groupBy(pending, (item) => item.title_id);
+  const legacyByTmdb = groupBy(legacyMarks, (item) => `${item.media_type}-${item.tmdb_id}`);
 
-  if (error) throw error;
+  return titles.map((title) => {
+    const titleStates = statesByTitle.get(title.id) ?? [];
+    const legacyStates = legacyByTmdb.get(`${title.media_type}-${title.tmdb_id}`) ?? [];
+    const pendingItems = pendingByTitle.get(title.id) ?? [];
 
-  const marks = new Map<string, CineMark[]>();
-  for (const mark of (data ?? []) as unknown as CineMark[]) {
-    const key = `${mark.media_type}-${mark.tmdb_id}`;
-    marks.set(key, [...(marks.get(key) ?? []), mark]);
-  }
-  return marks;
-}
-
-async function loadTmdbCatalog(marks: Map<string, CineMark[]>) {
-  await loadGenres();
-
-  const pagesPerProvider = Number(process.env.CINE_TMDB_PAGES_PER_PROVIDER ?? 4);
-  const deduped = new Map<string, CineTitle>();
-
-  for (const [provider, tmdbProviderId] of Object.entries(providerTmdbIds) as Array<[ProviderKey, number]>) {
-    for (const mediaType of ["movie", "series"] as const) {
-      const endpointType = mediaType === "movie" ? "movie" : "tv";
-      for (let page = 1; page <= pagesPerProvider; page += 1) {
-        const results = await tmdbDiscover(endpointType, tmdbProviderId, page);
-        for (const item of results) {
-          if (!item.poster_path) continue;
-          const title = mapTmdbItem(item, mediaType, provider, marks);
-          const existing = deduped.get(title.id);
-          if (existing) {
-            existing.availability = mergeAvailability(existing.availability, title.availability[0]);
-          } else {
-            deduped.set(title.id, title);
-          }
-        }
-      }
-    }
-  }
-
-  return [...deduped.values()].sort((left, right) => right.tmdbPopularity - left.tmdbPopularity);
-}
-
-async function tmdbDiscover(endpointType: "movie" | "tv", providerId: number, page: number): Promise<TmdbItem[]> {
-  const auth = getTmdbAuth();
-  const params = new URLSearchParams({
-    language: "es-ES",
-    watch_region: "ES",
-    with_watch_providers: String(providerId),
-    with_watch_monetization_types: "flatrate",
-    include_adult: "false",
-    sort_by: "popularity.desc",
-    page: String(page),
+    return {
+      id: title.id,
+      tmdbId: title.tmdb_id,
+      title: title.title,
+      originalTitle: title.original_title ?? undefined,
+      kind: title.media_type,
+      year: title.release_year ?? 0,
+      runtimeLabel: title.runtime_label ?? (title.media_type === "movie" ? "Pelicula" : "Serie"),
+      genres: title.genres ?? [],
+      posterPath: title.poster_path,
+      backdropPath: title.backdrop_path ?? "",
+      overview: title.overview ?? "",
+      imdbRating: Number(title.imdb_rating ?? title.tmdb_vote ?? 0) || undefined,
+      imdbVotes: title.imdb_votes ?? undefined,
+      rtTomatometer: title.rt_tomatometer ?? undefined,
+      rtPopcornmeter: title.rt_popcornmeter ?? undefined,
+      tmdbPopularity: Number(title.tmdb_popularity ?? 0),
+      availability: (availabilityByTitle.get(title.id) ?? []).map((item) => ({
+        provider: item.provider_key,
+        type: item.monetization,
+      })),
+      pendingCategories: unique(
+        pendingItems.map((item) => item.cine_pending_categories?.name).filter(Boolean) as PendingCategory[]
+      ),
+      addedBy: pendingItems.find((item) => item.cine_profiles?.initials)?.cine_profiles?.initials,
+      personal: {
+        RR: resolvePersonalState(titleStates, legacyStates, "RR"),
+        LB: resolvePersonalState(titleStates, legacyStates, "LB"),
+      },
+    };
   });
-  const url = appendQuery(`https://api.themoviedb.org/3/discover/${endpointType}?${params.toString()}`, auth.query);
-  const response = await fetch(url, { headers: auth.headers, next: { revalidate: 60 * 60 * 12 } });
-  if (!response.ok) throw new Error(`TMDB discover failed: ${response.status}`);
-  const payload = (await response.json()) as { results?: TmdbItem[] };
-  return payload.results ?? [];
 }
 
-async function loadGenres() {
-  if (movieGenres.size && tvGenres.size) return;
-  const auth = getTmdbAuth();
-  await Promise.all([
-    loadGenreList("movie", movieGenres, auth),
-    loadGenreList("tv", tvGenres, auth),
-  ]);
-}
-
-async function loadGenreList(
-  endpointType: "movie" | "tv",
-  target: Map<number, string>,
-  auth: ReturnType<typeof getTmdbAuth>
-) {
-  const url = appendQuery(`https://api.themoviedb.org/3/genre/${endpointType}/list?language=es-ES`, auth.query);
-  const response = await fetch(url, { headers: auth.headers, next: { revalidate: 60 * 60 * 24 * 7 } });
-  if (!response.ok) return;
-  const payload = (await response.json()) as { genres?: Array<{ id: number; name: string }> };
-  for (const genre of payload.genres ?? []) target.set(genre.id, genre.name);
-}
-
-function mapTmdbItem(
-  item: TmdbItem,
-  mediaType: MediaKind,
-  provider: ProviderKey,
-  marks: Map<string, CineMark[]>
-): CineTitle {
-  const key = `${mediaType}-${item.id}`;
-  const titleMarks = marks.get(key) ?? [];
-  const rr = titleMarks.find((mark) => mark.cine_profiles?.initials === "RR");
-  const lb = titleMarks.find((mark) => mark.cine_profiles?.initials === "LB");
-  const genreMap = mediaType === "movie" ? movieGenres : tvGenres;
-  const yearSource = mediaType === "movie" ? item.release_date : item.first_air_date;
-
+function resolvePersonalState(states: DbState[], legacyMarks: LegacyMark[], profile: ProfileKey) {
+  const state = states.find((item) => item.cine_profiles?.initials === profile);
+  const legacy = legacyMarks.find((item) => item.cine_profiles?.initials === profile);
+  const source = state ?? legacy;
   return {
-    id: key,
-    tmdbId: item.id,
-    title: item.title ?? item.name ?? "Sin titulo",
-    originalTitle: item.original_title ?? item.original_name,
-    kind: mediaType,
-    year: yearSource ? Number(yearSource.slice(0, 4)) : 0,
-    runtimeLabel: mediaType === "movie" ? "Pelicula" : "Serie",
-    genres: (item.genre_ids ?? []).map((id) => genreMap.get(id)).filter(Boolean) as string[],
-    posterPath: item.poster_path ?? "",
-    backdropPath: item.backdrop_path ?? "",
-    overview: item.overview ?? "",
-    imdbRating: item.vote_average ? Number(item.vote_average.toFixed(1)) : undefined,
-    tmdbPopularity: item.popularity ?? 0,
-    availability: [{ provider, type: "included" }],
-    pendingCategories: [],
-    personal: {
-      RR: {
-        status: rr?.status ?? "none",
-        rating: rr?.rating ?? undefined,
-        watchedAt: rr?.watched_at ?? undefined,
-      },
-      LB: {
-        status: lb?.status ?? "none",
-        rating: lb?.rating ?? undefined,
-        watchedAt: lb?.watched_at ?? undefined,
-      },
-    },
+    status: source?.status ?? "none",
+    rating: source?.rating ?? undefined,
+    watchedAt: source?.watched_at ?? undefined,
   };
 }
 
-function mergeAvailability(items: Availability[], next: Availability) {
-  if (items.some((item) => item.provider === next.provider && item.type === next.type)) return items;
-  return [...items, next];
+function groupBy<T>(items: T[], getKey: (item: T) => string) {
+  const grouped = new Map<string, T[]>();
+  for (const item of items) {
+    const key = getKey(item);
+    grouped.set(key, [...(grouped.get(key) ?? []), item]);
+  }
+  return grouped;
 }
 
+function unique<T>(items: T[]) {
+  return [...new Set(items)];
+}

@@ -10,7 +10,7 @@ type StatePayload = {
   scope?: "me" | "both";
 };
 
-type ExistingMark = {
+type ExistingState = {
   user_id: string;
   status: WatchStatus;
   rating: number | null;
@@ -26,6 +26,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
+  const { data: title, error: titleError } = await auth.supabase
+    .from("cine_titles")
+    .select("id")
+    .eq("tmdb_id", payload.tmdbId)
+    .eq("media_type", payload.mediaType)
+    .maybeSingle();
+
+  if (titleError) return NextResponse.json({ error: titleError.message }, { status: 500 });
+  if (!title) return NextResponse.json({ error: "Title is not imported yet." }, { status: 404 });
+
   const targetInitials: ProfileKey[] = payload.scope === "both" ? ["RR", "LB"] : [auth.profile.initials];
   const { data: profiles, error: profileError } = await auth.supabase
     .from("cine_profiles")
@@ -37,11 +47,10 @@ export async function POST(request: Request) {
   }
 
   const targetIds = (profiles ?? []).map((profile) => profile.id);
-  const { data: existingMarks, error: existingError } = await auth.supabase
-    .from("cine_user_marks")
+  const { data: existingStates, error: existingError } = await auth.supabase
+    .from("cine_user_title_states")
     .select("user_id, status, rating, watched_at")
-    .eq("tmdb_id", payload.tmdbId)
-    .eq("media_type", payload.mediaType)
+    .eq("title_id", title.id)
     .in("user_id", targetIds);
 
   if (existingError) {
@@ -50,7 +59,7 @@ export async function POST(request: Request) {
 
   const today = new Date().toISOString().slice(0, 10);
   const now = new Date().toISOString();
-  const existingByUser = new Map((existingMarks ?? []).map((mark) => [mark.user_id, mark as ExistingMark]));
+  const existingByUser = new Map((existingStates ?? []).map((state) => [state.user_id, state as ExistingState]));
 
   const upserts = (profiles ?? []).map((profile) => {
     const existing = existingByUser.get(profile.id);
@@ -59,8 +68,7 @@ export async function POST(request: Request) {
 
     return {
       user_id: profile.id,
-      tmdb_id: payload.tmdbId,
-      media_type: payload.mediaType,
+      title_id: title.id,
       status: nextStatus,
       rating: isCurrentUser ? payload.rating ?? existing?.rating ?? null : existing?.rating ?? null,
       watched_at: nextStatus === "watched" ? existing?.watched_at ?? today : null,
@@ -68,8 +76,8 @@ export async function POST(request: Request) {
     };
   });
 
-  const { error } = await auth.supabase.from("cine_user_marks").upsert(upserts, {
-    onConflict: "user_id,tmdb_id,media_type",
+  const { error } = await auth.supabase.from("cine_user_title_states").upsert(upserts, {
+    onConflict: "user_id,title_id",
   });
 
   if (error) {

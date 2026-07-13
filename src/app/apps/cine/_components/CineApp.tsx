@@ -6,6 +6,7 @@ import {
   Clapperboard,
   Film,
   Home,
+  RefreshCw,
   Search,
   SlidersHorizontal,
   Sparkles,
@@ -13,11 +14,12 @@ import {
   Ticket,
   Trophy,
   Tv,
-  Users
+  Users,
+  X
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { demoTitles, pendingCategories, profiles, providers } from "../_lib/cine-data";
-import type { CineTitle, MediaKind, MonetizationType, ProfileKey, ProviderKey, WatchStatus } from "../_lib/types";
+import type { CineTitle, MediaKind, MonetizationType, PendingCategory, ProfileKey, ProviderKey, WatchStatus } from "../_lib/types";
 
 type TabKey = "home" | "explore" | "pending" | "ratings";
 
@@ -65,37 +67,34 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
   const activeProfile = currentProfile ?? previewProfile;
   const [titles, setTitles] = useState<CineTitle[]>(demoTitles);
   const [catalogLoading, setCatalogLoading] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
   const [catalogError, setCatalogError] = useState("");
+  const [syncMessage, setSyncMessage] = useState("");
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [selectedTitleId, setSelectedTitleId] = useState<string>(demoTitles[0]?.id ?? "");
 
+  const loadCatalog = async () => {
+    if (!accessToken) return;
+    setCatalogLoading(true);
+    setCatalogError("");
+    try {
+      const response = await fetch("/api/cine/catalog", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? "No se pudo cargar el catalogo.");
+      const nextTitles = (payload.titles ?? []) as CineTitle[];
+      setTitles(nextTitles);
+      setSelectedTitleId((current) => (nextTitles.some((title) => title.id === current) ? current : nextTitles[0]?.id ?? ""));
+    } catch (error) {
+      setCatalogError(error instanceof Error ? error.message : "No se pudo cargar el catalogo.");
+    } finally {
+      setCatalogLoading(false);
+    }
+  };
 
   useEffect(() => {
-    if (!accessToken) return;
-    let cancelled = false;
-    async function loadCatalog() {
-      setCatalogLoading(true);
-      setCatalogError("");
-      try {
-        const response = await fetch("/api/cine/catalog", {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error ?? "No se pudo cargar el catalogo.");
-        if (!cancelled) {
-          setTitles(payload.titles ?? []);
-          setSelectedTitleId(payload.titles?.[0]?.id ?? "");
-        }
-      } catch (error) {
-        if (!cancelled) setCatalogError(error instanceof Error ? error.message : "No se pudo cargar el catalogo.");
-      } finally {
-        if (!cancelled) setCatalogLoading(false);
-      }
-    }
-    loadCatalog();
-    return () => {
-      cancelled = true;
-    };
+    void loadCatalog();
   }, [accessToken]);
 
   const selectedTitle = titles.find((title) => title.id === selectedTitleId) ?? titles[0];
@@ -148,6 +147,56 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
     });
   };
 
+  const syncCatalog = async () => {
+    if (!accessToken || syncLoading) return;
+    setSyncLoading(true);
+    setCatalogError("");
+    setSyncMessage("Actualizando catalogo...");
+    try {
+      const response = await fetch("/api/cine/sync", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? "No se pudo actualizar el catalogo.");
+      setSyncMessage(`Catalogo actualizado: ${payload.titles ?? 0} titulos importados.`);
+      await loadCatalog();
+    } catch (error) {
+      setCatalogError(error instanceof Error ? error.message : "No se pudo actualizar el catalogo.");
+      setSyncMessage("");
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  const updatePendingCategory = async (titleId: string, category: PendingCategory, action: "add" | "remove") => {
+    const currentTitle = titles.find((title) => title.id === titleId);
+    if (!accessToken || !currentTitle?.tmdbId) return;
+
+    setTitles((current) =>
+      current.map((title) => {
+        if (title.id !== titleId) return title;
+        const categories = action === "add"
+          ? [...new Set([...title.pendingCategories, category])]
+          : title.pendingCategories.filter((item) => item !== category);
+        return { ...title, pendingCategories: categories };
+      })
+    );
+
+    const response = await fetch("/api/cine/pending", {
+      method: action === "add" ? "POST" : "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        tmdbId: currentTitle.tmdbId,
+        mediaType: currentTitle.kind,
+        category,
+      }),
+    });
+    if (!response.ok) await loadCatalog();
+  };
   const updateRating = (titleId: string, profile: ProfileKey, rating: number) => {
     const currentTitle = titles.find((title) => title.id === titleId);
     if (currentTitle && profile === activeProfile) {
@@ -211,6 +260,9 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
               </div>
             </div>
             <div className="flex rounded-full border border-white/10 bg-white/6 p-1">
+              <button type="button" onClick={syncCatalog} disabled={syncLoading} className="h-9 w-9 rounded-full text-[var(--text-soft)] transition hover:bg-white/10 disabled:opacity-50" aria-label="Actualizar catalogo">
+                <RefreshCw size={17} className={syncLoading ? "animate-spin" : ""} />
+              </button>
               {profiles.map((profile) => (
                 <button
                   key={profile.key}
@@ -236,6 +288,11 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
               Cargando catalogo real de plataformas...
             </div>
           )}
+          {syncMessage && (
+            <div className="mb-4 rounded-xl border border-white/10 bg-white/6 p-3 text-sm text-[var(--text-soft)]">
+              {syncMessage}
+            </div>
+          )}
           {catalogError && (
             <div className="mb-4 rounded-xl border border-red-400/20 bg-red-500/12 p-3 text-sm text-red-100">
               {catalogError}
@@ -251,6 +308,7 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
               markWatched={markWatched}
               updateRating={updateRating}
               activeProfile={activeProfile}
+              updatePendingCategory={updatePendingCategory}
             />
           )}
           {activeTab === "explore" && (
@@ -262,6 +320,7 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
               updateRating={updateRating}
               markWatched={markWatched}
               activeProfile={activeProfile}
+              updatePendingCategory={updatePendingCategory}
             />
           )}
           {activeTab === "pending" && (
@@ -311,7 +370,8 @@ function HomeView({
   setActiveTab,
   markWatched,
   updateRating,
-  activeProfile
+  activeProfile,
+  updatePendingCategory
 }: {
   titles: CineTitle[];
   selectedTitle: CineTitle;
@@ -321,6 +381,7 @@ function HomeView({
   markWatched: (titleId: string, scope: "me" | "both") => void;
   updateRating: (titleId: string, profile: ProfileKey, rating: number) => void;
   activeProfile: ProfileKey;
+  updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
 }) {
   const unwatchedTogether = titles.filter(
     (title) => title.personal.RR.status !== "watched" && title.personal.LB.status !== "watched"
@@ -333,6 +394,7 @@ function HomeView({
         activeProfile={activeProfile}
         markWatched={markWatched}
         updateRating={updateRating}
+        updatePendingCategory={updatePendingCategory}
       />
 
       <div className="grid grid-cols-3 gap-2">
@@ -380,7 +442,8 @@ function ExploreView({
   setSelectedTitleId,
   updateRating,
   markWatched,
-  activeProfile
+  activeProfile,
+  updatePendingCategory
 }: {
   titles: CineTitle[];
   filters: Filters;
@@ -389,6 +452,7 @@ function ExploreView({
   updateRating: (titleId: string, profile: ProfileKey, rating: number) => void;
   markWatched: (titleId: string, scope: "me" | "both") => void;
   activeProfile: ProfileKey;
+  updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
 }) {
   return (
     <div className="space-y-4">
@@ -476,6 +540,7 @@ function ExploreView({
             activeProfile={activeProfile}
             updateRating={updateRating}
             markWatched={markWatched}
+            updatePendingCategory={updatePendingCategory}
           />
         ))}
       </div>
@@ -561,12 +626,14 @@ function HeroTitle({
   title,
   activeProfile,
   markWatched,
-  updateRating
+  updateRating,
+  updatePendingCategory
 }: {
   title: CineTitle;
   activeProfile: ProfileKey;
   markWatched: (titleId: string, scope: "me" | "both") => void;
   updateRating: (titleId: string, profile: ProfileKey, rating: number) => void;
+  updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
 }) {
   return (
     <article className="overflow-hidden rounded-2xl border border-white/10 bg-white/7 shadow-xl shadow-black/25">
@@ -585,7 +652,7 @@ function HeroTitle({
           </div>
           <h2 className="text-3xl font-semibold leading-tight">{title.title}</h2>
           <p className="mt-1 text-sm text-[var(--text-soft)]">
-            {title.year} · {title.runtimeLabel} · {title.genres.slice(0, 2).join(" / ")}
+            {title.year} ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {title.runtimeLabel} ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {title.genres.slice(0, 2).join(" / ")}
           </p>
           <p className="mt-3 line-clamp-3 text-sm leading-6 text-[var(--text-soft)]">{title.overview}</p>
         </div>
@@ -616,6 +683,7 @@ function HeroTitle({
           value={title.personal[activeProfile].rating}
           onChange={(rating) => updateRating(title.id, activeProfile, rating)}
         />
+        <PendingCategoryControls title={title} updatePendingCategory={updatePendingCategory} />
       </div>
     </article>
   );
@@ -626,13 +694,15 @@ function TitleCard({
   onSelect,
   activeProfile,
   updateRating,
-  markWatched
+  markWatched,
+  updatePendingCategory
 }: {
   title: CineTitle;
   onSelect: () => void;
   activeProfile: ProfileKey;
   updateRating: (titleId: string, profile: ProfileKey, rating: number) => void;
   markWatched: (titleId: string, scope: "me" | "both") => void;
+  updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
 }) {
   return (
     <article className="rounded-2xl border border-white/8 bg-white/6 p-3">
@@ -643,7 +713,7 @@ function TitleCard({
             <div className="min-w-0">
               <h3 className="truncate text-lg font-semibold">{title.title}</h3>
               <p className="truncate text-sm text-[var(--muted)]">
-                {title.year} · {title.runtimeLabel}
+                {title.year} ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {title.runtimeLabel}
               </p>
             </div>
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-black/35 text-sm font-bold">
@@ -661,13 +731,16 @@ function TitleCard({
           </div>
         </div>
       </button>
-      <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+      <div className="mt-3 grid grid-cols-[1fr_auto_auto] gap-2">
         <RatingPicker
           activeProfile={activeProfile}
           value={title.personal[activeProfile].rating}
           onChange={(rating) => updateRating(title.id, activeProfile, rating)}
           compact
         />
+        <button type="button" onClick={() => updatePendingCategory(title.id, "Para ver juntos", title.pendingCategories.includes("Para ver juntos") ? "remove" : "add")} className={`icon-action ${title.pendingCategories.includes("Para ver juntos") ? "action-button-done" : ""}`} aria-label="Pendiente para ver juntos">
+          <BookmarkPlus size={18} />
+        </button>
         <button type="button" onClick={() => markWatched(title.id, "both")} className="icon-action" aria-label="Vista por ambos">
           <Users size={18} />
         </button>
@@ -765,6 +838,58 @@ function RatingStrip({ title }: { title: CineTitle }) {
   );
 }
 
+function PendingCategoryControls({
+  title,
+  updatePendingCategory
+}: {
+  title: CineTitle;
+  updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
+}) {
+  const [category, setCategory] = useState<PendingCategory>("Para ver juntos");
+  const canAdd = !title.pendingCategories.includes(category);
+
+  return (
+    <div className="rounded-xl bg-black/24 p-2">
+      <div className="grid grid-cols-[1fr_auto] gap-2">
+        <label className="flex h-10 min-w-0 items-center gap-2 rounded-lg bg-white/6 px-2 text-sm">
+          <BookmarkPlus size={15} className="shrink-0 text-[var(--muted)]" />
+          <select
+            value={category}
+            onChange={(event) => setCategory(event.target.value as PendingCategory)}
+            className="min-w-0 flex-1 bg-transparent text-[var(--text-soft)] outline-none"
+          >
+            {pendingCategories.map((item) => (
+              <option key={item} value={item}>{item}</option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          onClick={() => updatePendingCategory(title.id, category, "add")}
+          disabled={!canAdd}
+          className="h-10 rounded-lg bg-white/8 px-3 text-xs font-semibold text-[var(--text-soft)] transition hover:bg-white/14 disabled:opacity-45"
+        >
+          Anadir
+        </button>
+      </div>
+      {title.pendingCategories.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {title.pendingCategories.map((item) => (
+            <button
+              key={item}
+              type="button"
+              onClick={() => updatePendingCategory(title.id, item, "remove")}
+              className="inline-flex items-center gap-1 rounded-full bg-white/8 px-2 py-1 text-[11px] font-semibold text-[var(--text-soft)]"
+            >
+              {item}
+              <X size={12} />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 function RatingPicker({
   activeProfile,
   value,
