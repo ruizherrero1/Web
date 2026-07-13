@@ -110,6 +110,11 @@ Notas externas (OMDb):
 - `OMDB_API_KEY` (necesaria para poblar IMDb/RT/Metacritic/runtime)
 - `CINE_OMDB_SYNC_LIMIT` (opcional, titulos enriquecidos por sync; 40 por defecto, max 200)
 
+Cron y sync automatico:
+
+- `CRON_SECRET` (Vercel lo envia como `Authorization: Bearer` a las rutas cron; protege `/api/cine/cron/sync`).
+- `SUPABASE_SERVICE_ROLE_KEY` (solo servidor; el cron no tiene sesion de usuario y usa cliente service-role que salta RLS). NUNCA exponer en cliente ni `NEXT_PUBLIC_*`.
+
 No escribir valores reales en este fichero.
 
 ## Flujo de sincronizacion

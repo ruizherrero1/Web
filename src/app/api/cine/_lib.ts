@@ -69,6 +69,21 @@ export function getSupabaseForToken(token: string) {
   });
 }
 
+// Server-only client that bypasses RLS. Used by the cron route, which has no user session.
+// SUPABASE_SERVICE_ROLE_KEY must never be exposed to the browser.
+export function getSupabaseServiceClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !serviceKey) {
+    throw new Error("Supabase service role is not configured.");
+  }
+
+  return createClient(url, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
 export async function requireCineProfile(request: Request) {
   if (!hasCineAccess(request)) {
     return { error: Response.json({ error: "Cine password required" }, { status: 401 }) };

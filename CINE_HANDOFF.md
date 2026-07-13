@@ -38,6 +38,16 @@ Notas externas (OMDb):
 
 ## Cambios recientes
 
+### 2026-07-13 - Sync reutilizable + Vercel Cron
+
+Rama `cine/cron-sync` (apilada sobre `cine/perf-catalog`).
+
+- Logica de sync extraida a `src/app/api/cine/_sync.ts` (`runCatalogSync`, `runRatingsSync`). La ruta `POST /api/cine/sync` queda fina y con `maxDuration = 60`.
+- Nueva ruta `GET /api/cine/cron/sync` protegida por `CRON_SECRET`, usa cliente service-role (`getSupabaseServiceClient`) porque el cron no tiene sesion de usuario. `?mode=ratings` hace solo enriquecimiento OMDb.
+- `vercel.json`: cron semanal (lunes 5:00, sync completo) y diario (5:00, solo ratings). El boton manual sigue igual.
+- Env nuevas: `CRON_SECRET`, `SUPABASE_SERVICE_ROLE_KEY` (solo servidor).
+- Nota Hobby: Vercel Hobby limita crons a ~1/dia y 2 jobs; esta config (semanal + diario) encaja. Si se quiere mas frecuencia, hace falta Pro.
+
 ### 2026-07-13 - Rendimiento: catalog deja de leer marcas legacy
 
 Rama `cine/perf-catalog` (apilada sobre `cine/fix-ratings-bugs`).
