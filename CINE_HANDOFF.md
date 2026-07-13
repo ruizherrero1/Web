@@ -21,6 +21,7 @@ Produccion:
 - La app Cine esta desplegada en Vercel dentro del proyecto web principal.
 - La password privada se valida con `CINE_SHARED_PASSWORD` y cookie firmada.
 - Supabase ya tiene usuarios RR/LB, catalogo y estados personales.
+- Vercel Production tiene configuradas `OMDB_API_KEY`, `CINE_OMDB_SYNC_LIMIT`, `CRON_SECRET` y `SUPABASE_SERVICE_ROLE_KEY` sin valores en git.
 - La app lee el catalogo importado desde Supabase, no desde TMDB en cada visita.
 
 Catalogo:
@@ -177,7 +178,13 @@ Ratings externos:
 
 - Rotten Tomatoes oficial requiere aprobacion/licencia; no asumir acceso libre.
 - RapidAPI puede ser util si devuelve datos, pero debe tratarse como cache parcial.
-- OMDb puede aportar ratings externos con key propia, pero hay que validar cobertura.
+- OMDb ya tiene key configurada en Vercel Production; falta validar cobertura real cuando se implemente o ejecute el enriquecimiento.
+
+### 2026-07-13 - Variables OMDb/cron en Vercel
+
+- Configuradas en Production: `OMDB_API_KEY`, `CINE_OMDB_SYNC_LIMIT=40`, `CRON_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`.
+- `OMDB_API_KEY`, `CRON_SECRET` y `SUPABASE_SERVICE_ROLE_KEY` estan marcadas como Sensitive en Vercel.
+- No se guardo ningun valor real en el repo.
 
 ## Incidencias conocidas
 

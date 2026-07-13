@@ -93,6 +93,7 @@ Notas:
 
 - `cine_titles.tmdb_vote` (nota media TMDB) sigue siendo la nota base siempre presente.
 - `rt_popcornmeter` (audiencia RT) no lo aporta OMDb; queda sin fuente por ahora.
+- OMDb queda configurado en Vercel Production como `OMDB_API_KEY` para enriquecer ratings externos.
 
 ## Variables de entorno
 
@@ -104,6 +105,10 @@ Configuradas en Vercel:
 - `CINE_SHARED_PASSWORD`
 - `CINE_COOKIE_SECRET` (importante: sin este, la cookie se deriva de la propia password)
 - `CINE_TMDB_PAGES_PER_PROVIDER`
+- `OMDB_API_KEY`
+- `CINE_OMDB_SYNC_LIMIT`
+- `CRON_SECRET`
+- `SUPABASE_SERVICE_ROLE_KEY`
 
 Notas externas (OMDb):
 
