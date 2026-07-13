@@ -54,7 +54,7 @@ type DbPending = {
 export const dynamic = "force-dynamic";
 
 const pageSize = 1000;
-const titleSelect = "id, tmdb_id, media_type, title, original_title, overview, poster_path, backdrop_path, release_year, runtime_label, genres, tmdb_vote, tmdb_popularity, imdb_rating, imdb_votes, rt_tomatometer, rt_popcornmeter";
+const titleSelect = "id, tmdb_id, media_type, title, original_title, overview, poster_path, backdrop_path, release_year, runtime_label, genres, tmdb_vote, tmdb_popularity, imdb_rating, imdb_votes, rt_tomatometer, rt_popcornmeter, search_titles";
 
 export async function GET(request: Request) {
   const auth = await requireCineProfile(request);

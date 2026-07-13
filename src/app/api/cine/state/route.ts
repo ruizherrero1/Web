@@ -6,7 +6,7 @@ type StatePayload = {
   tmdbId: number;
   mediaType: MediaKind;
   status?: WatchStatus;
-  rating?: number;
+  rating?: number | null;
   scope?: "me" | "both";
 };
 
@@ -60,17 +60,20 @@ export async function POST(request: Request) {
   const today = new Date().toISOString().slice(0, 10);
   const now = new Date().toISOString();
   const existingByUser = new Map((existingStates ?? []).map((state) => [state.user_id, state as ExistingState]));
+  const hasRating = Object.prototype.hasOwnProperty.call(payload, "rating");
+  const hasStatus = Object.prototype.hasOwnProperty.call(payload, "status");
 
   const upserts = (profiles ?? []).map((profile) => {
     const existing = existingByUser.get(profile.id);
     const isCurrentUser = profile.id === auth.profile.id;
-    const nextStatus = payload.status ?? existing?.status ?? "none";
+    const nextStatus = hasStatus ? payload.status ?? "none" : existing?.status ?? "none";
+    const nextRating = isCurrentUser && hasRating ? payload.rating ?? null : existing?.rating ?? null;
 
     return {
       user_id: profile.id,
       title_id: title.id,
       status: nextStatus,
-      rating: isCurrentUser ? payload.rating ?? existing?.rating ?? null : existing?.rating ?? null,
+      rating: nextRating,
       watched_at: nextStatus === "watched" ? existing?.watched_at ?? today : null,
       updated_at: now,
     };

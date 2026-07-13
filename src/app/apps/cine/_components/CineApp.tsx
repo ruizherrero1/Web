@@ -23,22 +23,26 @@ import type { CineTitle, MediaKind, MonetizationType, PendingCategory, ProfileKe
 
 type TabKey = "home" | "explore" | "pending" | "ratings";
 
+type SortKey = "top_rated" | "popular" | "recent";
+
 type Filters = {
   query: string;
   kind: "all" | MediaKind;
-  provider: "all" | ProviderKey;
+  providers: ProviderKey[];
   monetization: "all" | MonetizationType;
   minImdb: number;
   onlyUnwatchedTogether: boolean;
+  sort: SortKey;
 };
 
 const initialFilters: Filters = {
   query: "",
   kind: "all",
-  provider: "all",
+  providers: [],
   monetization: "all",
   minImdb: 0,
-  onlyUnwatchedTogether: false
+  onlyUnwatchedTogether: false,
+  sort: "top_rated"
 };
 
 const navItems = [
@@ -102,10 +106,11 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
   const filteredTitles = useMemo(() => {
     return titles
       .filter((title) => {
-        const query = filters.query.trim().toLowerCase();
-        if (query && !title.title.toLowerCase().includes(query)) return false;
+        const query = normalizeText(filters.query.trim());
+        const searchable = normalizeText([title.title, title.originalTitle, ...(title.searchTitles ?? []), ...title.genres].filter(Boolean).join(" "));
+        if (query && !searchable.includes(query)) return false;
         if (filters.kind !== "all" && title.kind !== filters.kind) return false;
-        if (filters.provider !== "all" && !title.availability.some((item) => item.provider === filters.provider)) {
+        if (filters.providers.length && !filters.providers.some((provider) => title.availability.some((item) => item.provider === provider))) {
           return false;
         }
         if (filters.monetization !== "all" && !title.availability.some((item) => item.type === filters.monetization)) {
@@ -117,7 +122,7 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
         }
         return true;
       })
-      .sort((left, right) => (right.imdbRating ?? 0) - (left.imdbRating ?? 0));
+      .sort((left, right) => sortTitles(left, right, filters.sort));
   }, [filters, titles]);
 
   const pendingTitles = titles.filter((title) => title.pendingCategories.length > 0);
@@ -131,7 +136,7 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
     }))
     .sort((left, right) => right.average - left.average);
 
-  const persistState = async (title: CineTitle, state: { status?: WatchStatus; rating?: number; scope?: "me" | "both" }) => {
+  const persistState = async (title: CineTitle, state: { status?: WatchStatus; rating?: number | null; scope?: "me" | "both" }) => {
     if (!accessToken || !title.tmdbId) return;
     await fetch("/api/cine/state", {
       method: "POST",
@@ -199,7 +204,7 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
     });
     if (!response.ok) await loadCatalog();
   };
-  const updateRating = (titleId: string, profile: ProfileKey, rating: number) => {
+  const updateRating = (titleId: string, profile: ProfileKey, rating: number | null) => {
     const currentTitle = titles.find((title) => title.id === titleId);
     if (currentTitle && profile === activeProfile) {
       void persistState(currentTitle, { rating, status: currentTitle.personal[profile].status === "none" ? "watched" : currentTitle.personal[profile].status });
@@ -381,7 +386,7 @@ function HomeView({
   setSelectedTitleId: (id: string) => void;
   setActiveTab: (tab: TabKey) => void;
   markWatched: (titleId: string, scope: "me" | "both") => void;
-  updateRating: (titleId: string, profile: ProfileKey, rating: number) => void;
+  updateRating: (titleId: string, profile: ProfileKey, rating: number | null) => void;
   activeProfile: ProfileKey;
   updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
 }) {
@@ -451,7 +456,7 @@ function ExploreView({
   filters: Filters;
   setFilters: React.Dispatch<React.SetStateAction<Filters>>;
   setSelectedTitleId: (id: string) => void;
-  updateRating: (titleId: string, profile: ProfileKey, rating: number) => void;
+  updateRating: (titleId: string, profile: ProfileKey, rating: number | null) => void;
   markWatched: (titleId: string, scope: "me" | "both") => void;
   activeProfile: ProfileKey;
   updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
@@ -493,19 +498,36 @@ function ExploreView({
             No vistas
           </FilterChip>
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          <SelectField
-            icon={Ticket}
-            value={filters.provider}
-            onChange={(value) => setFilters((current) => ({ ...current, provider: value as Filters["provider"] }))}
-          >
-            <option value="all">Todas las plataformas</option>
+        <div className="space-y-2 rounded-xl bg-black/24 p-2">
+          <div className="flex items-center gap-2 text-xs font-semibold text-[var(--muted)]">
+            <Ticket size={15} />
+            Plataformas
+          </div>
+          <div className="flex flex-wrap gap-1.5">
             {providers.map((provider) => (
-              <option key={provider.key} value={provider.key}>
-                {provider.name}
-              </option>
+              <FilterChip
+                key={provider.key}
+                active={filters.providers.includes(provider.key)}
+                onClick={() =>
+                  setFilters((current) => ({
+                    ...current,
+                    providers: current.providers.includes(provider.key)
+                      ? current.providers.filter((item) => item !== provider.key)
+                      : [...current.providers, provider.key],
+                  }))
+                }
+              >
+                {provider.shortName}
+              </FilterChip>
             ))}
-          </SelectField>
+            {filters.providers.length > 0 && (
+              <FilterChip active={false} onClick={() => setFilters((current) => ({ ...current, providers: [] }))}>
+                Limpiar
+              </FilterChip>
+            )}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
           <SelectField
             icon={SlidersHorizontal}
             value={filters.monetization}
@@ -515,6 +537,15 @@ function ExploreView({
             <option value="included">Incluido</option>
             <option value="rent">Alquiler</option>
             <option value="buy">Compra</option>
+          </SelectField>
+          <SelectField
+            icon={Trophy}
+            value={filters.sort}
+            onChange={(value) => setFilters((current) => ({ ...current, sort: value as SortKey }))}
+          >
+            <option value="top_rated">Mejor nota</option>
+            <option value="popular">Populares</option>
+            <option value="recent">Mas nuevas</option>
           </SelectField>
         </div>
         <label className="block rounded-xl bg-black/24 px-3 py-2">
@@ -634,7 +665,7 @@ function HeroTitle({
   title: CineTitle;
   activeProfile: ProfileKey;
   markWatched: (titleId: string, scope: "me" | "both") => void;
-  updateRating: (titleId: string, profile: ProfileKey, rating: number) => void;
+  updateRating: (titleId: string, profile: ProfileKey, rating: number | null) => void;
   updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
 }) {
   return (
@@ -653,9 +684,8 @@ function HeroTitle({
             ))}
           </div>
           <h2 className="text-3xl font-semibold leading-tight">{title.title}</h2>
-          <p className="mt-1 text-sm text-[var(--text-soft)]">
-            {title.year} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {title.runtimeLabel} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {title.genres.slice(0, 2).join(" / ")}
-          </p>
+          {title.originalTitle && title.originalTitle !== title.title && <p className="mt-1 text-sm font-semibold text-[var(--gold)]">{title.originalTitle}</p>}
+          <p className="mt-1 text-sm text-[var(--text-soft)]">{formatTitleMeta(title)}</p>
           <p className="mt-3 line-clamp-3 text-sm leading-6 text-[var(--text-soft)]">{title.overview}</p>
         </div>
       </div>
@@ -702,7 +732,7 @@ function TitleCard({
   title: CineTitle;
   onSelect: () => void;
   activeProfile: ProfileKey;
-  updateRating: (titleId: string, profile: ProfileKey, rating: number) => void;
+  updateRating: (titleId: string, profile: ProfileKey, rating: number | null) => void;
   markWatched: (titleId: string, scope: "me" | "both") => void;
   updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
 }) {
@@ -714,9 +744,8 @@ function TitleCard({
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
               <h3 className="truncate text-lg font-semibold">{title.title}</h3>
-              <p className="truncate text-sm text-[var(--muted)]">
-                {title.year} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {title.runtimeLabel}
-              </p>
+              {title.originalTitle && title.originalTitle !== title.title && <p className="truncate text-xs font-semibold text-[var(--gold)]">{title.originalTitle}</p>}
+              <p className="truncate text-sm text-[var(--muted)]">{formatTitleMeta(title, true)}</p>
             </div>
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-black/35 text-sm font-bold">
               {title.imdbRating?.toFixed(1) ?? "-"}
@@ -900,7 +929,7 @@ function RatingPicker({
 }: {
   activeProfile: ProfileKey;
   value?: number;
-  onChange: (rating: number) => void;
+  onChange: (rating: number | null) => void;
   compact?: boolean;
 }) {
   return (
@@ -916,8 +945,8 @@ function RatingPicker({
           <button
             key={rating}
             type="button"
-            onClick={() => onChange(rating)}
-            aria-label={`Poner ${rating}`}
+            onClick={() => onChange(value === rating ? null : rating)}
+            aria-label={value === rating ? `Quitar ${rating}` : `Poner ${rating}`}
             className={`h-8 rounded-md text-xs font-bold transition ${
               value === rating ? "bg-[var(--gold)] text-black" : "bg-white/8 text-[var(--text-soft)] hover:bg-white/14"
             }`}
@@ -1066,6 +1095,21 @@ function MiniScore({ label, value }: { label: string; value?: number }) {
       <p className="text-sm font-black">{value ? value : "-"}</p>
     </div>
   );
+}
+
+function normalizeText(value: string) {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function sortTitles(left: CineTitle, right: CineTitle, sort: SortKey) {
+  if (sort === "popular") return right.tmdbPopularity - left.tmdbPopularity;
+  if (sort === "recent") return (right.year || 0) - (left.year || 0);
+  return (right.imdbRating ?? 0) - (left.imdbRating ?? 0) || right.tmdbPopularity - left.tmdbPopularity;
+}
+
+function formatTitleMeta(title: CineTitle, compact = false) {
+  const parts = [title.year || null, compact ? title.runtimeLabel : title.runtimeLabel, compact ? null : title.genres.slice(0, 2).join(" / ")].filter(Boolean);
+  return parts.join(" - ");
 }
 
 function topScore(titles: CineTitle[], profile: ProfileKey) {

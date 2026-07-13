@@ -14,6 +14,7 @@ type TmdbItem = {
   first_air_date?: string;
   genre_ids?: number[];
   vote_average?: number;
+  vote_count?: number;
   popularity?: number;
 };
 
@@ -30,6 +31,8 @@ export type TmdbCatalogTitle = {
   genres: string[];
   tmdb_vote: number | null;
   tmdb_popularity: number;
+  imdb_votes: number | null;
+  search_titles: string[];
   last_synced_at: string;
   availability: Availability[];
 };
@@ -48,17 +51,27 @@ export async function loadTmdbCatalogForSync(pagesPerProvider: number) {
     for (const mediaType of ["movie", "series"] as const) {
       const endpointType = mediaType === "movie" ? "movie" : "tv";
       for (let page = 1; page <= pagesPerProvider; page += 1) {
-        requestedPages += 1;
-        const results = await tmdbDiscover(endpointType, tmdbProviderId, page);
-        if (results.length === 0) break;
-        for (const item of results) {
+        requestedPages += 2;
+        const [englishResults, spanishResults] = await Promise.all([
+          tmdbDiscover(endpointType, tmdbProviderId, page, "en-US"),
+          tmdbDiscover(endpointType, tmdbProviderId, page, "es-ES"),
+        ]);
+        if (englishResults.length === 0 && spanishResults.length === 0) break;
+
+        const spanishById = new Map(spanishResults.map((item) => [item.id, item]));
+        const allItems = new Map<number, TmdbItem>();
+        for (const item of englishResults) allItems.set(item.id, item);
+        for (const item of spanishResults) if (!allItems.has(item.id)) allItems.set(item.id, item);
+
+        for (const item of allItems.values()) {
           if (!item.poster_path) continue;
-          const title = mapTmdbItem(item, mediaType, provider, syncedAt);
+          const title = mapTmdbItem(item, spanishById.get(item.id), mediaType, provider, syncedAt);
           const key = `${title.media_type}-${title.tmdb_id}`;
           const existing = deduped.get(key);
           if (existing) {
             existing.availability = mergeAvailability(existing.availability, title.availability[0]);
             existing.tmdb_popularity = Math.max(existing.tmdb_popularity, title.tmdb_popularity);
+            existing.search_titles = unique([...existing.search_titles, ...title.search_titles]);
           } else {
             deduped.set(key, title);
           }
@@ -70,10 +83,15 @@ export async function loadTmdbCatalogForSync(pagesPerProvider: number) {
   return { titles: [...deduped.values()], requestedPages, syncedAt };
 }
 
-async function tmdbDiscover(endpointType: "movie" | "tv", providerId: number, page: number): Promise<TmdbItem[]> {
+async function tmdbDiscover(
+  endpointType: "movie" | "tv",
+  providerId: number,
+  page: number,
+  language: "en-US" | "es-ES"
+): Promise<TmdbItem[]> {
   const auth = getTmdbAuth();
   const params = new URLSearchParams({
-    language: "es-ES",
+    language,
     watch_region: "ES",
     with_watch_providers: String(providerId),
     with_watch_monetization_types: "flatrate",
@@ -111,32 +129,47 @@ async function loadGenreList(
 
 function mapTmdbItem(
   item: TmdbItem,
+  spanishItem: TmdbItem | undefined,
   mediaType: MediaKind,
   provider: ProviderKey,
   syncedAt: string
 ): TmdbCatalogTitle {
   const genreMap = mediaType === "movie" ? movieGenres : tvGenres;
   const yearSource = mediaType === "movie" ? item.release_date : item.first_air_date;
+  const englishTitle = cleanTitle(item.title ?? item.name ?? item.original_title ?? item.original_name) ?? "Untitled";
+  const spanishTitle = cleanTitle(spanishItem?.title ?? spanishItem?.name);
+  const originalTitle = cleanTitle(item.original_title ?? item.original_name);
+  const aliases = unique([englishTitle, spanishTitle, originalTitle].filter(Boolean) as string[]);
 
   return {
     tmdb_id: item.id,
     media_type: mediaType,
-    title: item.title ?? item.name ?? "Sin titulo",
-    original_title: item.original_title ?? item.original_name,
-    overview: item.overview ?? "",
-    poster_path: item.poster_path ?? "",
-    backdrop_path: item.backdrop_path ?? "",
+    title: englishTitle,
+    original_title: spanishTitle && spanishTitle !== englishTitle ? spanishTitle : originalTitle,
+    overview: item.overview ?? spanishItem?.overview ?? "",
+    poster_path: item.poster_path ?? spanishItem?.poster_path ?? "",
+    backdrop_path: item.backdrop_path ?? spanishItem?.backdrop_path ?? "",
     release_year: yearSource ? Number(yearSource.slice(0, 4)) : null,
-    runtime_label: mediaType === "movie" ? "Pelicula" : "Serie",
+    runtime_label: mediaType === "movie" ? "Movie" : "Series",
     genres: (item.genre_ids ?? []).map((id) => genreMap.get(id)).filter(Boolean) as string[],
     tmdb_vote: item.vote_average ? Number(item.vote_average.toFixed(1)) : null,
     tmdb_popularity: item.popularity ?? 0,
+    imdb_votes: item.vote_count ?? null,
+    search_titles: aliases,
     last_synced_at: syncedAt,
     availability: [{ provider, type: "included" }],
   };
 }
 
+function cleanTitle(value?: string) {
+  return value?.trim() || undefined;
+}
+
 function mergeAvailability(items: Availability[], next: Availability) {
   if (items.some((item) => item.provider === next.provider && item.type === next.type)) return items;
   return [...items, next];
+}
+
+function unique<T>(items: T[]) {
+  return [...new Set(items)];
 }
