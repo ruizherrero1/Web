@@ -38,6 +38,14 @@ Notas externas (OMDb):
 
 ## Cambios recientes
 
+### 2026-07-13 - Recomendador "Que vemos hoy"
+
+Rama `cine/today-recommender` (apilada sobre `cine/title-detail`).
+
+- Nueva pestana "Hoy" (nav pasa a 5 columnas) con heuristica 100% en cliente: filtra por no-vista (para los dos o solo el usuario activo), plataforma disponible, genero y tiempo disponible (usa runtime real). Puntua con blend de todas las notas (IMDb/TMDB/RT/Metacritic) y muestra 5 sugerencias.
+- Boton "Otra ruleta" (jitter determinista por seed) para rebarajar entre las buenas candidatas.
+- Sin backend nuevo. Evolucion futura: consenso por afinidad de genero RR/LB.
+
 ### 2026-07-13 - Ficha de detalle por titulo
 
 Rama `cine/title-detail` (apilada sobre `cine/cron-sync`).

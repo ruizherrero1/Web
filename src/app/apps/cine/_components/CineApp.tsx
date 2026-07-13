@@ -4,6 +4,7 @@ import {
   BookmarkPlus,
   Check,
   Clapperboard,
+  Dices,
   ExternalLink,
   Film,
   Home,
@@ -24,7 +25,9 @@ import { useEffect, useMemo, useState } from "react";
 import { demoTitles, pendingCategories, profiles, providers } from "../_lib/cine-data";
 import type { CineTitle, MediaKind, MonetizationType, PendingCategory, ProfileKey, ProviderKey, TitleDetail, WatchStatus } from "../_lib/types";
 
-type TabKey = "home" | "explore" | "pending" | "ratings";
+type TabKey = "home" | "explore" | "today" | "pending" | "ratings";
+
+type TodayScope = "me" | "both";
 
 type SortKey = "top_rated" | "popular" | "recent";
 
@@ -73,6 +76,7 @@ const watchFilterLabels: Record<WatchFilter, string> = {
 const navItems = [
   { key: "home", label: "Inicio", icon: Home },
   { key: "explore", label: "Buscar", icon: Search },
+  { key: "today", label: "Hoy", icon: Dices },
   { key: "pending", label: "Pendientes", icon: BookmarkPlus },
   { key: "ratings", label: "Notas", icon: Star }
 ] as const;
@@ -372,6 +376,15 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
               openDetail={setDetailTitle}
             />
           )}
+          {activeTab === "today" && (
+            <TodayView
+              titles={titles}
+              activeProfile={activeProfile}
+              setSelectedTitleId={setSelectedTitleId}
+              setActiveTab={setActiveTab}
+              openDetail={setDetailTitle}
+            />
+          )}
           {activeTab === "pending" && (
             <PendingView
               titles={pendingTitles}
@@ -386,7 +399,7 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
         </section>
 
         <nav className="fixed bottom-0 left-1/2 z-30 w-full max-w-[520px] -translate-x-1/2 border-t border-white/10 bg-[rgba(10,8,9,0.92)] px-3 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-2 backdrop-blur-xl">
-          <div className="grid grid-cols-4 gap-1">
+          <div className="grid grid-cols-5 gap-1">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.key;
@@ -651,6 +664,129 @@ function ExploreView({
           />
         ))}
       </div>
+    </div>
+  );
+}
+
+function TodayView({
+  titles,
+  activeProfile,
+  setSelectedTitleId,
+  setActiveTab,
+  openDetail
+}: {
+  titles: CineTitle[];
+  activeProfile: ProfileKey;
+  setSelectedTitleId: (id: string) => void;
+  setActiveTab: (tab: TabKey) => void;
+  openDetail: (title: CineTitle) => void;
+}) {
+  const [scope, setScope] = useState<TodayScope>("both");
+  const [maxMinutes, setMaxMinutes] = useState(0);
+  const [selectedProviders, setSelectedProviders] = useState<ProviderKey[]>([]);
+  const [genre, setGenre] = useState("");
+  const [seed, setSeed] = useState(0);
+
+  const allGenres = useMemo(() => {
+    const set = new Set<string>();
+    for (const title of titles) for (const g of title.genres) set.add(g);
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [titles]);
+
+  const picks = useMemo(() => {
+    const candidates = titles.filter((title) => {
+      const unseen = scope === "both"
+        ? title.personal.RR.status !== "watched" && title.personal.LB.status !== "watched"
+        : title.personal[activeProfile].status !== "watched";
+      if (!unseen) return false;
+      if (selectedProviders.length && !selectedProviders.some((p) => title.availability.some((a) => a.provider === p))) return false;
+      if (maxMinutes > 0 && title.runtimeMinutes && title.runtimeMinutes > maxMinutes) return false;
+      if (genre && !title.genres.includes(genre)) return false;
+      return true;
+    });
+
+    return candidates
+      .map((title) => ({ title, score: blendedScore(title) + seededJitter(title.id, seed) }))
+      .sort((left, right) => right.score - left.score)
+      .slice(0, 5);
+  }, [titles, scope, activeProfile, selectedProviders, maxMinutes, genre, seed]);
+
+  return (
+    <div className="space-y-4">
+      <SectionHeader icon={Dices} title="Que vemos hoy" />
+
+      <div className="space-y-3 rounded-2xl border border-white/10 bg-white/6 p-3">
+        <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-black/24 p-1">
+          <button type="button" onClick={() => setScope("both")} aria-pressed={scope === "both"} className={`h-10 rounded-xl text-sm font-bold transition ${scope === "both" ? "bg-[var(--gold)] text-black" : "text-[var(--text-soft)]"}`}>
+            Para los dos
+          </button>
+          <button type="button" onClick={() => setScope("me")} aria-pressed={scope === "me"} className={`h-10 rounded-xl text-sm font-bold transition ${scope === "me" ? "bg-[var(--gold)] text-black" : "text-[var(--text-soft)]"}`}>
+            Solo {activeProfile}
+          </button>
+        </div>
+
+        <div className="space-y-2 rounded-xl bg-black/24 p-2">
+          <div className="flex items-center gap-2 text-xs font-semibold text-[var(--muted)]"><Ticket size={15} /> Plataformas</div>
+          <div className="flex flex-wrap gap-1.5">
+            {providers.map((provider) => (
+              <FilterChip
+                key={provider.key}
+                active={selectedProviders.includes(provider.key)}
+                onClick={() => setSelectedProviders((current) => current.includes(provider.key) ? current.filter((p) => p !== provider.key) : [...current, provider.key])}
+              >
+                {provider.shortName}
+              </FilterChip>
+            ))}
+          </div>
+        </div>
+
+        <SelectField icon={Film} value={genre} onChange={setGenre}>
+          <option value="">Cualquier genero</option>
+          {allGenres.map((g) => (
+            <option key={g} value={g}>{g}</option>
+          ))}
+        </SelectField>
+
+        <label className="block rounded-xl bg-black/24 px-3 py-2">
+          <span className="mb-1 flex items-center justify-between text-xs text-[var(--muted)]">
+            Tiempo disponible <strong className="text-[var(--text-main)]">{maxMinutes ? formatRuntime(maxMinutes) : "Cualquiera"}</strong>
+          </span>
+          <input type="range" min="0" max="210" step="15" value={maxMinutes} onChange={(event) => setMaxMinutes(Number(event.target.value))} className="w-full accent-[var(--gold)]" />
+        </label>
+
+        <button type="button" onClick={() => setSeed((value) => value + 1)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--gold)] py-3 text-sm font-bold text-black">
+          <Dices size={18} /> Otra ruleta
+        </button>
+      </div>
+
+      {picks.length === 0 ? (
+        <p className="rounded-xl border border-white/10 bg-white/6 p-4 text-sm text-[var(--muted)]">
+          No hay candidatas con estos filtros. Prueba a quitar plataforma, genero o tiempo.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {picks.map(({ title, score }) => (
+            <div key={title.id} className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/6 p-3">
+              <button type="button" onClick={() => { setSelectedTitleId(title.id); setActiveTab("home"); }} className="shrink-0">
+                <Poster title={title} size="small" />
+              </button>
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-semibold">{title.title}</p>
+                <p className="truncate text-sm text-[var(--muted)]">{formatTitleMeta(title, true)}</p>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {title.availability.slice(0, 3).map((item) => (
+                    <ProviderBadge key={`${title.id}-${item.provider}`} provider={item.provider} type={item.type} compact />
+                  ))}
+                </div>
+              </div>
+              <div className="flex flex-col items-center gap-1">
+                <div className="grid h-11 w-11 place-items-center rounded-full bg-[var(--gold)] text-sm font-black text-black">{score.toFixed(1)}</div>
+                <button type="button" onClick={() => openDetail(title)} className="text-[10px] font-semibold text-[var(--muted)]">Ficha</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1402,6 +1538,27 @@ function passesWatchFilter(title: CineTitle, watch: WatchFilter, activeProfile: 
   if (watch === "watched_lb") return title.personal.LB.status === "watched";
   if (watch === "no_rating_mine") return !title.personal[activeProfile].rating;
   return title.pendingCategories.length > 0;
+}
+
+// Blend of every available rating source on a 0-10 scale; unknown => neutral 5.
+function blendedScore(title: CineTitle) {
+  const parts: number[] = [];
+  if (title.imdbRating) parts.push(title.imdbRating);
+  if (title.tmdbRating) parts.push(title.tmdbRating);
+  if (title.rtTomatometer != null) parts.push(title.rtTomatometer / 10);
+  if (title.metascore != null) parts.push(title.metascore / 10);
+  if (!parts.length) return 5;
+  return parts.reduce((sum, value) => sum + value, 0) / parts.length;
+}
+
+// Small deterministic jitter so "Otra ruleta" reshuffles among good candidates without a full re-render randomness.
+function seededJitter(id: string, seed: number) {
+  let hash = seed * 2654435761;
+  for (let index = 0; index < id.length; index += 1) {
+    hash = (hash ^ id.charCodeAt(index)) * 16777619;
+  }
+  const normalized = ((hash >>> 0) % 1000) / 1000;
+  return normalized * 0.9;
 }
 
 function formatMinScore(filters: Filters) {
