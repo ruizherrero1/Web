@@ -25,13 +25,18 @@ type TabKey = "home" | "explore" | "pending" | "ratings";
 
 type SortKey = "top_rated" | "popular" | "recent";
 
+type RatingSource = "tmdb" | "imdb" | "rt" | "metacritic";
+
+type WatchFilter = "all" | "unseen_together" | "watched_rr" | "watched_lb" | "no_rating_mine" | "pending";
+
 type Filters = {
   query: string;
   kind: "all" | MediaKind;
   providers: ProviderKey[];
   monetization: "all" | MonetizationType;
-  minImdb: number;
-  onlyUnwatchedTogether: boolean;
+  ratingSource: RatingSource;
+  minScore: number;
+  watch: WatchFilter;
   sort: SortKey;
 };
 
@@ -40,9 +45,26 @@ const initialFilters: Filters = {
   kind: "all",
   providers: [],
   monetization: "all",
-  minImdb: 0,
-  onlyUnwatchedTogether: false,
+  ratingSource: "tmdb",
+  minScore: 0,
+  watch: "all",
   sort: "top_rated"
+};
+
+const ratingSources: Record<RatingSource, { label: string; unit: "ten" | "percent" }> = {
+  tmdb: { label: "TMDB", unit: "ten" },
+  imdb: { label: "IMDb", unit: "ten" },
+  rt: { label: "Rotten Tomatoes", unit: "percent" },
+  metacritic: { label: "Metacritic", unit: "percent" }
+};
+
+const watchFilterLabels: Record<WatchFilter, string> = {
+  all: "Todas",
+  unseen_together: "Sin ver juntos",
+  watched_rr: "Vistas RR",
+  watched_lb: "Vistas LB",
+  no_rating_mine: "Sin nota mia",
+  pending: "En pendientes"
 };
 
 const navItems = [
@@ -98,6 +120,8 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
   };
 
   useEffect(() => {
+    // Load the real catalog once the access token is available (fetch-on-mount).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadCatalog();
   }, [accessToken]);
 
@@ -116,14 +140,15 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
         if (filters.monetization !== "all" && !title.availability.some((item) => item.type === filters.monetization)) {
           return false;
         }
-        if (title.imdbRating && title.imdbRating < filters.minImdb) return false;
-        if (filters.onlyUnwatchedTogether) {
-          return title.personal.RR.status !== "watched" && title.personal.LB.status !== "watched";
+        if (filters.minScore > 0) {
+          const score = scoreForSource(title, filters.ratingSource);
+          if (score === undefined || score < filters.minScore) return false;
         }
+        if (!passesWatchFilter(title, filters.watch, activeProfile)) return false;
         return true;
       })
       .sort((left, right) => sortTitles(left, right, filters.sort));
-  }, [filters, titles]);
+  }, [filters, titles, activeProfile]);
 
   const pendingTitles = titles.filter((title) => title.pendingCategories.length > 0);
   const watchedTogether = titles.filter(
@@ -138,18 +163,29 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
 
   const persistState = async (title: CineTitle, state: { status?: WatchStatus; rating?: number | null; scope?: "me" | "both" }) => {
     if (!accessToken || !title.tmdbId) return;
-    await fetch("/api/cine/state", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({
-        tmdbId: title.tmdbId,
-        mediaType: title.kind,
-        ...state,
-      }),
-    });
+    try {
+      const response = await fetch("/api/cine/state", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          tmdbId: title.tmdbId,
+          mediaType: title.kind,
+          ...state,
+        }),
+      });
+      // The list updates optimistically; on failure re-sync from the server so the
+      // UI never keeps a change that was not persisted.
+      if (!response.ok) {
+        setCatalogError("No se pudo guardar el cambio. Recargando estado real.");
+        await loadCatalog();
+      }
+    } catch {
+      setCatalogError("Sin conexion al guardar. Recargando estado real.");
+      await loadCatalog();
+    }
   };
 
   const syncCatalog = async () => {
@@ -164,9 +200,9 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "No se pudo actualizar el catalogo.");
-      const rt = payload.rottenTomatoes;
-      const rtText = rt && !rt.skipped ? ` RT: ${rt.updated ?? 0}/${rt.attempted ?? 0}.` : "";
-      setSyncMessage(`Catalogo actualizado: ${payload.titles ?? 0} titulos importados.${rtText}`);
+      const ratings = payload.ratings;
+      const ratingsText = ratings && !ratings.skipped ? ` Notas externas: ${ratings.updated ?? 0}/${ratings.attempted ?? 0}.` : "";
+      setSyncMessage(`Catalogo actualizado: ${payload.titles ?? 0} titulos importados.${ratingsText}`);
       await loadCatalog();
     } catch (error) {
       setCatalogError(error instanceof Error ? error.message : "No se pudo actualizar el catalogo.");
@@ -489,14 +525,17 @@ function ExploreView({
           >
             Series
           </FilterChip>
-          <FilterChip
-            active={filters.onlyUnwatchedTogether}
-            onClick={() =>
-              setFilters((current) => ({ ...current, onlyUnwatchedTogether: !current.onlyUnwatchedTogether }))
-            }
-          >
-            No vistas
-          </FilterChip>
+        </div>
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          {(Object.keys(watchFilterLabels) as WatchFilter[]).map((key) => (
+            <FilterChip
+              key={key}
+              active={filters.watch === key}
+              onClick={() => setFilters((current) => ({ ...current, watch: key }))}
+            >
+              {watchFilterLabels[key]}
+            </FilterChip>
+          ))}
         </div>
         <div className="space-y-2 rounded-xl bg-black/24 p-2">
           <div className="flex items-center gap-2 text-xs font-semibold text-[var(--muted)]">
@@ -548,20 +587,32 @@ function ExploreView({
             <option value="recent">Mas nuevas</option>
           </SelectField>
         </div>
-        <label className="block rounded-xl bg-black/24 px-3 py-2">
-          <span className="mb-2 flex items-center justify-between text-xs text-[var(--muted)]">
-            IMDb minimo <strong className="text-[var(--text-main)]">{filters.minImdb || "Cualquiera"}</strong>
-          </span>
-          <input
-            type="range"
-            min="0"
-            max="9"
-            step="1"
-            value={filters.minImdb}
-            onChange={(event) => setFilters((current) => ({ ...current, minImdb: Number(event.target.value) }))}
-            className="w-full accent-[var(--gold)]"
-          />
-        </label>
+        <div className="grid grid-cols-2 gap-2">
+          <SelectField
+            icon={Star}
+            value={filters.ratingSource}
+            onChange={(value) => setFilters((current) => ({ ...current, ratingSource: value as RatingSource }))}
+          >
+            <option value="tmdb">Nota TMDB</option>
+            <option value="imdb">Nota IMDb</option>
+            <option value="rt">Rotten Tomatoes</option>
+            <option value="metacritic">Metacritic</option>
+          </SelectField>
+          <label className="block rounded-xl bg-black/24 px-3 py-2">
+            <span className="mb-1 flex items-center justify-between text-xs text-[var(--muted)]">
+              Nota min <strong className="text-[var(--text-main)]">{formatMinScore(filters)}</strong>
+            </span>
+            <input
+              type="range"
+              min="0"
+              max="10"
+              step="1"
+              value={filters.minScore}
+              onChange={(event) => setFilters((current) => ({ ...current, minScore: Number(event.target.value) }))}
+              className="w-full accent-[var(--gold)]"
+            />
+          </label>
+        </div>
       </div>
 
       <div className="space-y-3">
@@ -748,7 +799,7 @@ function TitleCard({
               <p className="truncate text-sm text-[var(--muted)]">{formatTitleMeta(title, true)}</p>
             </div>
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-black/35 text-sm font-bold">
-              {title.imdbRating?.toFixed(1) ?? "-"}
+              {(title.imdbRating ?? title.tmdbRating)?.toFixed(1) ?? "-"}
             </span>
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
@@ -798,7 +849,7 @@ function HorizontalShelf({
         >
           <Poster title={title} size="shelf" />
           <p className="mt-2 line-clamp-2 text-sm font-semibold leading-5">{title.title}</p>
-          <p className="text-xs text-[var(--muted)]">TMDB {title.imdbRating?.toFixed(1) ?? "-"}</p>
+          <p className="text-xs text-[var(--muted)]">TMDB {title.tmdbRating?.toFixed(1) ?? "-"}</p>
         </button>
       ))}
     </div>
@@ -861,10 +912,10 @@ function StatusPill({ label, status, watchedAt }: { label: ProfileKey; status: W
 function RatingStrip({ title }: { title: CineTitle }) {
   return (
     <div className="grid grid-cols-4 gap-2">
-      <Metric label="TMDB" value={title.imdbRating?.toFixed(1) ?? "-"} />
-      <Metric label="RT Critica" value={title.rtTomatometer ? `${title.rtTomatometer}%` : "-"} />
-      <Metric label="Popcorn" value={title.rtPopcornmeter ? `${title.rtPopcornmeter}%` : "-"} />
-      <Metric label="Popular" value={Math.round(title.tmdbPopularity).toString()} />
+      <Metric label="TMDB" value={title.tmdbRating?.toFixed(1) ?? "-"} />
+      <Metric label="IMDb" value={title.imdbRating?.toFixed(1) ?? "-"} />
+      <Metric label="RT" value={title.rtTomatometer != null ? `${title.rtTomatometer}%` : "-"} />
+      <Metric label="Metacritic" value={title.metascore != null ? `${title.metascore}` : "-"} />
     </div>
   );
 }
@@ -1108,8 +1159,46 @@ function sortTitles(left: CineTitle, right: CineTitle, sort: SortKey) {
 }
 
 function formatTitleMeta(title: CineTitle, compact = false) {
-  const parts = [title.year || null, compact ? title.runtimeLabel : title.runtimeLabel, compact ? null : title.genres.slice(0, 2).join(" / ")].filter(Boolean);
+  const runtime = title.runtimeMinutes
+    ? formatRuntime(title.runtimeMinutes)
+    : title.kind === "movie"
+      ? "Pelicula"
+      : "Serie";
+  const parts = [title.year || null, runtime, compact ? null : title.genres.slice(0, 2).join(" / ")].filter(Boolean);
   return parts.join(" - ");
+}
+
+function formatRuntime(minutes: number) {
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `${hours}h ${rest}m` : `${hours}h`;
+}
+
+// Normalises every rating source to a 0-10 scale so one slider can filter any of them.
+function scoreForSource(title: CineTitle, source: RatingSource): number | undefined {
+  if (source === "tmdb") return title.tmdbRating;
+  if (source === "imdb") return title.imdbRating;
+  if (source === "rt") return title.rtTomatometer != null ? title.rtTomatometer / 10 : undefined;
+  return title.metascore != null ? title.metascore / 10 : undefined;
+}
+
+function passesWatchFilter(title: CineTitle, watch: WatchFilter, activeProfile: ProfileKey): boolean {
+  if (watch === "all") return true;
+  if (watch === "unseen_together") {
+    return title.personal.RR.status !== "watched" && title.personal.LB.status !== "watched";
+  }
+  if (watch === "watched_rr") return title.personal.RR.status === "watched";
+  if (watch === "watched_lb") return title.personal.LB.status === "watched";
+  if (watch === "no_rating_mine") return !title.personal[activeProfile].rating;
+  return title.pendingCategories.length > 0;
+}
+
+function formatMinScore(filters: Filters) {
+  if (!filters.minScore) return "Cualquiera";
+  return ratingSources[filters.ratingSource].unit === "percent"
+    ? `${filters.minScore * 10}%`
+    : `${filters.minScore}`;
 }
 
 function topScore(titles: CineTitle[], profile: ProfileKey) {

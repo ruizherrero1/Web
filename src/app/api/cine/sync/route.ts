@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireCineProfile } from "../_lib";
-import { fetchRottenTomatoesScores, hasRottenTomatoesEnv } from "../_ratings";
+import { fetchOmdbRatings, hasOmdbEnv } from "../_omdb";
 import { loadTmdbCatalogForSync, type TmdbCatalogTitle } from "../_tmdb";
 
 export const dynamic = "force-dynamic";
@@ -19,12 +19,14 @@ export async function POST(request: Request) {
     const upserted = await upsertTitles(auth.supabase, catalog.titles);
     await replaceAvailability(auth.supabase, catalog.titles, upserted);
     await migrateLegacyMarks(auth.supabase);
+    const ratings = await enrichRatingsFromOmdb(auth.supabase);
 
     return NextResponse.json({
       ok: true,
       titles: catalog.titles.length,
       requestedPages: catalog.requestedPages,
       syncedAt: catalog.syncedAt,
+      ratings,
     });
   } catch (error) {
     return NextResponse.json(
@@ -86,15 +88,27 @@ async function replaceAvailability(
   }
 }
 
-async function syncRottenTomatoesRatings(supabase: SupabaseClient) {
-  const configuredLimit = Number(process.env.CINE_RT_SYNC_LIMIT ?? 25);
-  const limit = Number.isFinite(configuredLimit) ? Math.min(Math.max(configuredLimit, 0), 100) : 25;
-  if (!hasRottenTomatoesEnv() || limit === 0) return { attempted: 0, updated: 0, skipped: true };
+type EnrichableTitle = {
+  id: string;
+  tmdb_id: number;
+  media_type: "movie" | "series";
+  title: string;
+  original_title: string | null;
+  release_year: number | null;
+  imdb_id: string | null;
+};
+
+// Enrich the stalest titles with IMDb + Rotten Tomatoes + Metacritic + runtime from OMDb.
+// Bounded per run (OMDb free tier is ~1000/day), so repeated syncs cover the catalog over time.
+async function enrichRatingsFromOmdb(supabase: SupabaseClient) {
+  const configuredLimit = Number(process.env.CINE_OMDB_SYNC_LIMIT ?? 40);
+  const limit = Number.isFinite(configuredLimit) ? Math.min(Math.max(configuredLimit, 0), 200) : 40;
+  if (!hasOmdbEnv() || limit === 0) return { attempted: 0, updated: 0, skipped: true };
 
   const { data: titles, error } = await supabase
     .from("cine_titles")
-    .select("id, title, original_title")
-    .or("rt_tomatometer.is.null,rt_popcornmeter.is.null")
+    .select("id, tmdb_id, media_type, title, original_title, release_year, imdb_id")
+    .order("ratings_updated_at", { ascending: true, nullsFirst: true })
     .order("tmdb_popularity", { ascending: false })
     .limit(limit);
 
@@ -102,25 +116,35 @@ async function syncRottenTomatoesRatings(supabase: SupabaseClient) {
 
   let attempted = 0;
   let updated = 0;
-  for (const title of (titles ?? []) as Array<{ id: string; title: string; original_title: string | null }>) {
-    const query = title.original_title || title.title;
+  const now = new Date().toISOString();
+
+  for (const title of (titles ?? []) as EnrichableTitle[]) {
     attempted += 1;
     try {
-      const scores = await fetchRottenTomatoesScores(query);
-      if (scores.tomatometer === null && scores.popcornmeter === null) continue;
+      const ratings = await fetchOmdbRatings({
+        title: title.title,
+        year: title.release_year,
+        kind: title.media_type,
+        imdbId: title.imdb_id,
+      });
 
-      const { error: updateError } = await supabase
-        .from("cine_titles")
-        .update({
-          rt_tomatometer: scores.tomatometer,
-          rt_popcornmeter: scores.popcornmeter,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", title.id);
+      // Always stamp the freshness so a missing title rotates to the back of the queue
+      // instead of being retried on every sync.
+      const patch: Record<string, unknown> = { ratings_updated_at: now, updated_at: now };
+      if (ratings) {
+        if (ratings.imdbId) patch.imdb_id = ratings.imdbId;
+        if (ratings.imdbRating !== null) patch.imdb_rating = ratings.imdbRating;
+        if (ratings.imdbVotes !== null) patch.imdb_votes = ratings.imdbVotes;
+        if (ratings.rtTomatometer !== null) patch.rt_tomatometer = ratings.rtTomatometer;
+        if (ratings.metascore !== null) patch.metascore = ratings.metascore;
+        if (ratings.runtimeMinutes !== null) patch.runtime_minutes = ratings.runtimeMinutes;
+      }
+
+      const { error: updateError } = await supabase.from("cine_titles").update(patch).eq("id", title.id);
       if (updateError) throw updateError;
-      updated += 1;
+      if (ratings) updated += 1;
     } catch {
-      // RapidAPI quotas and individual title misses should not block the catalog sync.
+      // OMDb quota or a single-title miss should not block the catalog sync.
     }
   }
 

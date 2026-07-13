@@ -29,13 +29,28 @@ Catalogo:
 - Se anadio campo `search_titles` para buscar en ingles y espanol.
 - La sincronizacion final del 2026-07-13 dejo 1228/1228 titulos con `searchTitles` poblado.
 
-Rotten Tomatoes:
+Notas externas (OMDb):
 
-- Hay integracion preparada via RapidAPI, pero la key no esta configurada en Vercel por seguridad.
-- Antes de subir la key, pedir aprobacion explicita al propietario.
-- En pruebas, RapidAPI devolvio muchos scores `null`; no asumir que cubre todo el catalogo.
+- Fuente activa para IMDb, Rotten Tomatoes (criticos), Metacritic y runtime real.
+- Requiere `OMDB_API_KEY` en Vercel. Se enriquece por lotes en cada sync (los mas obsoletos primero).
+- Con ~1228 titulos y free tier ~1000/dia, el catalogo tarda varios syncs en cubrirse. Los titulos sin datos muestran "-".
+- La antigua integracion RapidAPI/Rotten Tomatoes se ha eliminado (devolvia demasiados `null`).
 
 ## Cambios recientes
+
+### 2026-07-13 - Notas multi-fuente (OMDb), runtime real y filtros
+
+Rama `cine/fix-ratings-bugs` (pendiente de merge). Requiere aplicar migracion y anadir `OMDB_API_KEY` en Vercel.
+
+- Bug: `sync` definia el enriquecimiento de Rotten Tomatoes pero nunca lo llamaba. Ahora `sync` llama a `enrichRatingsFromOmdb` y devuelve `ratings: { attempted, updated, skipped }`.
+- Bug: el filtro "IMDb minimo" filtraba en realidad por nota TMDB (imdb_rating nunca se poblaba). Ahora hay notas reales por fuente.
+- Bug: la UI optimista de notas/vistos no revertia si la API fallaba. `persistState` recarga el catalogo y avisa si falla.
+- OMDb aporta en una sola llamada: nota IMDb, votos IMDb, Rotten Tomatoes (criticos), Metacritic y runtime real. Se elimina la integracion RapidAPI (`_ratings.ts`).
+- Nueva migracion `20260713_cine_rating_sources.sql`: `imdb_id`, `runtime_minutes`, `metascore`, `ratings_updated_at`.
+- `catalog` expone `tmdbRating` (separado de `imdbRating`), `metascore`, `runtimeMinutes`, `imdbId`, `ratingsUpdatedAt`.
+- Frontend: RatingStrip muestra TMDB / IMDb / RT / Metacritic. Filtro por fuente de nota + nota minima normalizada. Nuevos filtros de estado: sin ver juntos, vistas RR, vistas LB, sin nota mia, en pendientes. Runtime real en metadatos.
+- Env nuevas: `OMDB_API_KEY`, `CINE_OMDB_SYNC_LIMIT`. Retiradas: `ROTTENTOMATO_RAPIDAPI_KEY`, `CINE_RT_SYNC_LIMIT`.
+- Verificado en local: `npm run lint` (0 errores), `npm run build` OK. Falta probar en produccion con la migracion aplicada y `OMDB_API_KEY` puesta.
 
 ### 2026-07-13 - Documentacion viva y mejoras de catalogo
 
@@ -86,11 +101,12 @@ Alta prioridad:
 
 Media prioridad:
 
-- Anadir fuente fiable para IMDb/Rotten Tomatoes si el propietario aporta acceso valido.
-- Guardar timestamp `ratings_updated_at` si se refrescan ratings externos.
-- Mejorar "Pendientes" con categorias reales, mover entre categorias y quitar rapido.
-- Anadir filtros "vistas por RR", "vistas por LB", "pendientes", "sin nota", "sin ver".
-- Anadir recomendaciones: mejor nota compartida, diferencias RR/LB, popular con baja duracion.
+- [HECHO 2026-07-13] Fuente fiable de IMDb/RT/Metacritic via OMDb.
+- [HECHO 2026-07-13] Timestamp `ratings_updated_at` al refrescar ratings externos.
+- [HECHO 2026-07-13] Filtros "vistas por RR", "vistas por LB", "pendientes", "sin nota mia", "sin ver juntos" y filtro por fuente de nota.
+- Mejorar "Pendientes" con mover entre categorias y quitar rapido desde la vista de pendientes.
+- Anadir recomendaciones: mejor nota compartida, diferencias RR/LB, popular con baja duracion (ya hay runtime real para esto).
+- Cron semanal de sync (Vercel Cron) manteniendo el boton manual, y trocear el sync para no arriesgar timeout.
 
 Ideas futuras:
 

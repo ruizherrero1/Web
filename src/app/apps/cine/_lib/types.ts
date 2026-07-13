@@ -47,11 +47,16 @@ export type CineTitle = {
   posterPath: string;
   backdropPath: string;
   overview: string;
+  runtimeMinutes?: number;
+  imdbId?: string;
+  tmdbRating?: number;
   imdbRating?: number;
   imdbVotes?: number;
+  metascore?: number;
   tmdbPopularity: number;
   rtTomatometer?: number;
   rtPopcornmeter?: number;
+  ratingsUpdatedAt?: string;
   availability: Availability[];
   pendingCategories: PendingCategory[];
   addedBy?: ProfileKey;
