@@ -4,6 +4,7 @@ import {
   BookmarkPlus,
   Check,
   Clapperboard,
+  CloudOff,
   Dices,
   ExternalLink,
   Film,
@@ -23,7 +24,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { demoTitles, pendingCategories, profiles, providers } from "../_lib/cine-data";
-import { enqueueMutation, flushQueue } from "../_lib/offline";
+import { CINE_QUEUE_CHANGED, enqueueMutation, flushQueue, getPendingCount } from "../_lib/offline";
 import type { CineTitle, MediaKind, MonetizationType, PendingCategory, ProfileKey, ProviderKey, TitleDetail, WatchStatus } from "../_lib/types";
 
 function isOffline() {
@@ -111,6 +112,8 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [selectedTitleId, setSelectedTitleId] = useState<string>(demoTitles[0]?.id ?? "");
   const [detailTitle, setDetailTitle] = useState<CineTitle | null>(null);
+  const [online, setOnline] = useState(true);
+  const [pendingWrites, setPendingWrites] = useState(0);
 
   const loadCatalog = async () => {
     if (!accessToken) return;
@@ -151,6 +154,28 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
     return () => window.removeEventListener("online", flush);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken]);
+
+  useEffect(() => {
+    // CineApp only renders on the client (after login), so registering the service
+    // worker and reading navigator here cannot cause an SSR hydration mismatch.
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/cine-sw.js", { scope: "/apps/cine" }).catch(() => {});
+    }
+    const refreshPending = () => setPendingWrites(getPendingCount());
+    const goOnline = () => setOnline(true);
+    const goOffline = () => setOnline(false);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setOnline(navigator.onLine);
+    refreshPending();
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    window.addEventListener(CINE_QUEUE_CHANGED, refreshPending);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+      window.removeEventListener(CINE_QUEUE_CHANGED, refreshPending);
+    };
+  }, []);
 
   const selectedTitle = titles.find((title) => title.id === selectedTitleId) ?? titles[0];
 
@@ -447,6 +472,21 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
           </div>
         </nav>
       </div>
+      {(!online || pendingWrites > 0) && (
+        <div
+          className="fixed bottom-[calc(env(safe-area-inset-bottom)+72px)] left-1/2 z-40 inline-flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/10 bg-black/70 px-4 py-2 text-xs font-semibold text-[var(--text-soft)] backdrop-blur"
+          aria-live="polite"
+        >
+          {online ? (
+            <RefreshCw size={15} className="animate-spin text-[var(--gold)]" />
+          ) : (
+            <CloudOff size={15} className="text-[var(--muted)]" />
+          )}
+          {!online
+            ? `Sin conexion${pendingWrites ? ` - ${pendingWrites} por sincronizar` : " - ultimo catalogo guardado"}`
+            : `Sincronizando ${pendingWrites} cambio${pendingWrites === 1 ? "" : "s"}...`}
+        </div>
+      )}
       {detailTitle && (
         <TitleDetailSheet
           title={detailTitle}

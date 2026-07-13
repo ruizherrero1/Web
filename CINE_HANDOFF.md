@@ -39,6 +39,17 @@ Notas externas (OMDb):
 
 ## Cambios recientes
 
+### 2026-07-13 - Hotfix: "Preparando Cine" colgado (hidratacion)
+
+Ramas `cine/hotfix-hydration` y `cine/hotfix-layout`.
+
+- Sintoma: `/apps/cine` se quedaba clavado en "Preparando Cine" en produccion (los efectos de `AuthGate` no corrian). Reproducido: hidratacion muerta en prod (Node 22 de Vercel), pero OK en build local.
+- Causa: el nuevo `layout.tsx` con el componente cliente `CineServiceWorker` envolvia toda la ruta y rompia la hidratacion del subtree pre-login. `AuthGate` no se tocaba y funcionaba antes de tener ese layout.
+- Fix definitivo: eliminado `apps/cine/layout.tsx` y `CineServiceWorker.tsx`. El `manifest`/`appleWebApp` pasa a `page.tsx`. El registro del service worker + badge offline se hacen ahora DENTRO de `CineApp` (que solo se renderiza en cliente tras el login, asi que no puede causar mismatch de hidratacion). Estructura pre-login restaurada a la que funcionaba (AuthGate directo bajo el root layout).
+- Leccion: no meter componentes cliente con estado dependiente de `navigator`/`window` en un `layout.tsx` que envuelve el gate de login.
+
+
+
 ### 2026-07-13 - Deuda menor: limpieza + consenso + offline writes
 
 Rama `cine/pwa` (mismo stack; ultimo commit).
