@@ -27,7 +27,7 @@ Catalogo:
 
 - Importacion previa: 1228 titulos en produccion el 2026-07-13.
 - Se anadio campo `search_titles` para buscar en ingles y espanol.
-- Despues de desplegar el cambio de `search_titles`, ejecutar de nuevo la sincronizacion.
+- La sincronizacion final del 2026-07-13 dejo 1228/1228 titulos con `searchTitles` poblado.
 
 Rotten Tomatoes:
 
@@ -39,7 +39,7 @@ Rotten Tomatoes:
 
 ### 2026-07-13 - Documentacion viva y mejoras de catalogo
 
-Pendiente de subir en el commit actual:
+Subido a `main`:
 
 - Creados `CINE_CONTEXT.md` y `CINE_HANDOFF.md`.
 - Titulos principales pasan a ingles, con titulo espanol guardado para busqueda.
@@ -49,10 +49,13 @@ Pendiente de subir en el commit actual:
 - Toggle de nota: pulsar la misma nota la borra.
 - Toggle de visto: permite marcar y desmarcar visto por mi o por ambos.
 - Fix visual de mojibake en metadatos de tarjetas usando separadores ASCII.
+- `catalog` expone `searchTitles` y sanea textos con posible mojibake antes de responder.
 - Migracion `20260713_cine_search_titles.sql` para `cine_titles.search_titles`.
 
 ### Commits ya subidos
 
+- `596cba4 Fix Cine catalog aliases`
+- `03d57e1 Improve Cine catalog filters and handoff docs`
 - `8ea29dc Add Rotten Tomatoes rating sync`
 - `91fb66e Fix Cine Supabase access`
 - `60234e4 Add Cine catalog sync`
@@ -77,7 +80,6 @@ Pendiente de subir en el commit actual:
 
 Alta prioridad:
 
-- Ejecutar sincronizacion en produccion tras desplegar `search_titles`.
 - Confirmar que el boton "Actualizar catalogo" muestra estado de carga completo en movil.
 - Validar que borrar notas y desmarcar vistos persiste correctamente.
 - Validar multi-filtro de plataformas en movil.
@@ -110,6 +112,11 @@ Ratings externos:
 - Rotten Tomatoes oficial requiere aprobacion/licencia; no asumir acceso libre.
 - RapidAPI puede ser util si devuelve datos, pero debe tratarse como cache parcial.
 - OMDb puede aportar ratings externos con key propia, pero hay que validar cobertura.
+
+## Incidencias conocidas
+
+- `cine.ramonruizherrero.com` no resolvia DNS el 2026-07-13. La ruta sana es `https://www.ramonruizherrero.com/apps/cine`.
+- `vercel env pull` puede descargar variables sensibles como cadenas vacias; no usarlo como prueba de que faltan en runtime.
 
 ## Procedimiento de deploy
 

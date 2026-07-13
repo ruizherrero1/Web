@@ -121,8 +121,8 @@ El catalogo no debe pedir TMDB en cada carga de usuario. El flujo correcto es:
 
 Estado conocido:
 
-- El catalogo llego a importar 1228 titulos en produccion el 2026-07-13.
-- Tras la migracion `search_titles`, conviene ejecutar de nuevo "Actualizar catalogo" para rellenar busqueda bilingue.
+- El catalogo importo 1228 titulos en produccion el 2026-07-13.
+- Tras la migracion `search_titles`, la sincronizacion final dejo `searchTitles` poblado en los 1228 titulos.
 
 ## UX actual
 
@@ -147,4 +147,5 @@ Funciones principales:
 - Si se cambia Supabase, anadir migracion en `supabase/migrations`.
 - Si se cambia el importador, documentar impacto en este fichero.
 - Si se cambia comportamiento visible o flujo, documentarlo en `CINE_HANDOFF.md`.
+- El subdominio `cine.ramonruizherrero.com` no resolvia DNS el 2026-07-13; usar `https://www.ramonruizherrero.com/apps/cine` mientras no se configure dominio.
 - No eliminar compatibilidad con RR/LB salvo peticion expresa.
