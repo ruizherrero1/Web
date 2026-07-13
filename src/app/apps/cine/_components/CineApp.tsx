@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { demoTitles, pendingCategories, profiles, providers } from "../_lib/cine-data";
-import type { CineTitle, MediaKind, MonetizationType, ProfileKey, ProviderKey } from "../_lib/types";
+import type { CineTitle, MediaKind, MonetizationType, ProfileKey, ProviderKey, WatchStatus } from "../_lib/types";
 
 type TabKey = "home" | "explore" | "pending" | "ratings";
 
@@ -50,6 +50,13 @@ const monetizationLabels: Record<MonetizationType, string> = {
   included: "Incluido",
   rent: "Alquiler",
   buy: "Compra"
+};
+
+const watchStatusLabels: Record<WatchStatus, string> = {
+  none: "Pendiente",
+  watching: "Viendo",
+  watched: "Vista",
+  abandoned: "Abandonada"
 };
 
 export function CineApp() {
@@ -518,12 +525,21 @@ function HeroTitle({
       </div>
       <div className="space-y-3 p-4">
         <RatingStrip title={title} />
+        <WatchStatusStrip title={title} activeProfile={activeProfile} />
         <div className="grid grid-cols-2 gap-2">
-          <button type="button" onClick={() => markWatched(title.id, "me")} className="action-button">
+          <button
+            type="button"
+            onClick={() => markWatched(title.id, "me")}
+            className={`action-button ${title.personal[activeProfile].status === "watched" ? "action-button-done" : ""}`}
+          >
             <Check size={18} />
             Vista por mi
           </button>
-          <button type="button" onClick={() => markWatched(title.id, "both")} className="action-button action-button-gold">
+          <button
+            type="button"
+            onClick={() => markWatched(title.id, "both")}
+            className={`action-button action-button-gold ${title.personal.RR.status === "watched" && title.personal.LB.status === "watched" ? "action-button-done" : ""}`}
+          >
             <Users size={18} />
             Vista ambos
           </button>
@@ -633,6 +649,44 @@ function Poster({ title, size = "normal" }: { title: CineTitle; size?: "small" |
   );
 }
 
+function WatchStatusStrip({
+  title,
+  activeProfile,
+  compact = false
+}: {
+  title: CineTitle;
+  activeProfile?: ProfileKey;
+  compact?: boolean;
+}) {
+  const bothWatched = title.personal.RR.status === "watched" && title.personal.LB.status === "watched";
+  const activeWatched = activeProfile ? title.personal[activeProfile].status === "watched" : false;
+  const summary = bothWatched
+    ? "Vista por ambos"
+    : activeWatched && activeProfile
+      ? `Vista por ${activeProfile}`
+      : "Pendiente por alguno";
+
+  return (
+    <div className={`${compact ? "mt-2" : ""} rounded-xl border border-white/8 bg-black/24 p-2`}>
+      {!compact && <p className="mb-2 text-xs font-semibold text-[var(--gold)]">{summary}</p>}
+      <div className="grid grid-cols-2 gap-2">
+        <StatusPill label="RR" status={title.personal.RR.status} watchedAt={title.personal.RR.watchedAt} />
+        <StatusPill label="LB" status={title.personal.LB.status} watchedAt={title.personal.LB.watchedAt} />
+      </div>
+    </div>
+  );
+}
+
+function StatusPill({ label, status, watchedAt }: { label: ProfileKey; status: WatchStatus; watchedAt?: string }) {
+  const isWatched = status === "watched";
+  return (
+    <div className={`rounded-lg px-2 py-1.5 ${isWatched ? "bg-[rgba(68,209,157,0.16)] text-[#92f0c9]" : "bg-white/6 text-[var(--muted)]"}`}>
+      <p className="text-[10px] font-black">{label}</p>
+      <p className="text-xs font-semibold">{watchStatusLabels[status]}</p>
+      {watchedAt && <p className="text-[10px] opacity-75">{watchedAt}</p>}
+    </div>
+  );
+}
 function RatingStrip({ title }: { title: CineTitle }) {
   return (
     <div className="grid grid-cols-4 gap-2">
