@@ -2,18 +2,28 @@
 
 import type { Session } from "@supabase/supabase-js";
 import { Clapperboard } from "lucide-react";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
+import type { ProfileKey } from "../_lib/types";
 import { createClient, hasSupabaseEnv } from "../_lib/supabase/client";
 
-type AuthGateProps = {
-  children: React.ReactNode;
+type CineProfile = {
+  id: string;
+  initials: ProfileKey;
+  display_name: string;
 };
+
+type AuthGateProps = {
+  children: React.ReactElement<{ currentProfile?: ProfileKey; accessToken?: string }>;
+};
+
+const isLocalPreviewAllowed = process.env.NODE_ENV !== "production";
 
 export function AuthGate({ children }: AuthGateProps) {
   const supabaseReady = hasSupabaseEnv();
   const [session, setSession] = useState<Session | null>(null);
+  const [profile, setProfile] = useState<CineProfile | null>(null);
   const [loaded, setLoaded] = useState(!supabaseReady);
-  const [previewMode, setPreviewMode] = useState(!supabaseReady);
+  const [previewMode] = useState(!supabaseReady && isLocalPreviewAllowed);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -23,15 +33,47 @@ export function AuthGate({ children }: AuthGateProps) {
     if (!supabaseReady) return;
 
     const supabase = createClient();
-    supabase.auth.getSession().then(({ data }) => {
+
+    async function loadSession() {
+      const { data } = await supabase.auth.getSession();
       setSession(data.session);
+      if (data.session) {
+        await loadProfile(data.session.user.id);
+      }
       setLoaded(true);
-    });
+    }
+
+    async function loadProfile(userId: string) {
+      const { data, error } = await supabase
+        .from("cine_profiles")
+        .select("id, initials, display_name")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (error || !data) {
+        setProfile(null);
+        setErrorMessage("Tu usuario no tiene acceso a Cine.");
+        await supabase.auth.signOut();
+        setSession(null);
+        return;
+      }
+
+      setProfile(data as CineProfile);
+      setErrorMessage("");
+    }
+
+    loadSession();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
       setSession(nextSession);
+      if (nextSession) {
+        await loadProfile(nextSession.user.id);
+      } else {
+        setProfile(null);
+      }
+      setLoaded(true);
     });
 
     return () => subscription.unsubscribe();
@@ -59,6 +101,22 @@ export function AuthGate({ children }: AuthGateProps) {
     await supabase.auth.signOut();
   };
 
+  if (!supabaseReady && !isLocalPreviewAllowed) {
+    return (
+      <main className="cine-app-shell grid min-h-screen place-items-center bg-[var(--page-bg)] px-4 py-8 text-[var(--text-main)]">
+        <div className="w-full max-w-[420px] rounded-3xl border border-white/10 bg-[var(--app-bg)] p-5 shadow-2xl shadow-black/45">
+          <div className="mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-[var(--gold)] text-black">
+            <Clapperboard size={28} />
+          </div>
+          <h1 className="text-2xl font-semibold">Cine necesita configuracion</h1>
+          <p className="mt-3 text-sm leading-6 text-[var(--text-soft)]">
+            Faltan las variables publicas de Supabase en el despliegue. Por seguridad, la app no abre preview en produccion.
+          </p>
+        </div>
+      </main>
+    );
+  }
+
   if (!loaded) {
     return (
       <main className="cine-app-shell grid min-h-screen place-items-center bg-[var(--page-bg)] px-6 text-[var(--text-main)]">
@@ -72,7 +130,7 @@ export function AuthGate({ children }: AuthGateProps) {
     );
   }
 
-  if (!previewMode && !session) {
+  if (!previewMode && (!session || !profile)) {
     return (
       <main className="cine-app-shell grid min-h-screen place-items-center bg-[var(--page-bg)] px-4 py-8 text-[var(--text-main)]">
         <form
@@ -133,12 +191,12 @@ export function AuthGate({ children }: AuthGateProps) {
           Salir
         </button>
       )}
-      {!supabaseReady && !previewMode && (
-        <button type="button" onClick={() => setPreviewMode(true)} className="action-button fixed bottom-4 left-4 z-40">
+      {!supabaseReady && previewMode && (
+        <div className="fixed left-4 top-4 z-40 rounded-full border border-white/10 bg-black/50 px-3 py-2 text-xs font-semibold text-[var(--text-soft)] backdrop-blur">
           Preview local
-        </button>
+        </div>
       )}
-      {children}
+      {React.cloneElement(children, { currentProfile: profile?.initials ?? "RR", accessToken: session?.access_token })}
     </div>
   );
 }

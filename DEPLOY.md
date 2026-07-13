@@ -33,3 +33,14 @@ Guía para desplegar la web en Vercel y conectarla con `ramonruizherrero.com`.
 - Enlaces TODO revisados.
 - No hay datos sensibles en el código.
 - `README.md`, `ROADMAP.md`, `TODO.md` e `Historico.md` actualizados.
+
+## Variables de entorno para Cine
+
+Configurar en Vercel como variables privadas/publicas segun corresponda:
+
+- `NEXT_PUBLIC_SUPABASE_URL`: URL del proyecto Supabase actual.
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: anon key publica de Supabase.
+- `TMDB_API_KEY` o `TMDB_ACCESS_TOKEN`: clave privada de TMDB para el servidor.
+- `CINE_TMDB_PAGES_PER_PROVIDER`: opcional; paginas por plataforma y tipo. Por defecto 4.
+
+No guardar claves TMDB ni passwords en Git.

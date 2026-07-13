@@ -1,17 +1,16 @@
 import { createBrowserClient } from "@supabase/ssr";
 
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
 export function hasSupabaseEnv() {
-  return Boolean(process.env.NEXT_PUBLIC_CINE_SUPABASE_URL && process.env.NEXT_PUBLIC_CINE_SUPABASE_PUBLISHABLE_KEY);
+  return Boolean(supabaseUrl && supabaseKey);
 }
 
 export function createClient() {
-  if (!process.env.NEXT_PUBLIC_CINE_SUPABASE_URL || !process.env.NEXT_PUBLIC_CINE_SUPABASE_PUBLISHABLE_KEY) {
+  if (!supabaseUrl || !supabaseKey) {
     throw new Error("Supabase env vars are not configured.");
   }
 
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_CINE_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_CINE_SUPABASE_PUBLISHABLE_KEY
-  );
+  return createBrowserClient(supabaseUrl, supabaseKey);
 }
-

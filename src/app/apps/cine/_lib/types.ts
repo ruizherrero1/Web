@@ -36,6 +36,7 @@ export type PersonalState = {
 
 export type CineTitle = {
   id: string;
+  tmdbId?: number;
   title: string;
   originalTitle?: string;
   kind: MediaKind;

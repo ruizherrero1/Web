@@ -15,7 +15,7 @@ import {
   Tv,
   Users
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { demoTitles, pendingCategories, profiles, providers } from "../_lib/cine-data";
 import type { CineTitle, MediaKind, MonetizationType, ProfileKey, ProviderKey, WatchStatus } from "../_lib/types";
 
@@ -59,12 +59,44 @@ const watchStatusLabels: Record<WatchStatus, string> = {
   abandoned: "Abandonada"
 };
 
-export function CineApp() {
+export function CineApp({ currentProfile, accessToken }: { currentProfile?: ProfileKey; accessToken?: string }) {
   const [activeTab, setActiveTab] = useState<TabKey>("home");
-  const [activeProfile, setActiveProfile] = useState<ProfileKey>("RR");
+  const [previewProfile, setPreviewProfile] = useState<ProfileKey>("RR");
+  const activeProfile = currentProfile ?? previewProfile;
   const [titles, setTitles] = useState<CineTitle[]>(demoTitles);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState("");
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [selectedTitleId, setSelectedTitleId] = useState<string>(demoTitles[0]?.id ?? "");
+
+
+  useEffect(() => {
+    if (!accessToken) return;
+    let cancelled = false;
+    async function loadCatalog() {
+      setCatalogLoading(true);
+      setCatalogError("");
+      try {
+        const response = await fetch("/api/cine/catalog", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error ?? "No se pudo cargar el catalogo.");
+        if (!cancelled) {
+          setTitles(payload.titles ?? []);
+          setSelectedTitleId(payload.titles?.[0]?.id ?? "");
+        }
+      } catch (error) {
+        if (!cancelled) setCatalogError(error instanceof Error ? error.message : "No se pudo cargar el catalogo.");
+      } finally {
+        if (!cancelled) setCatalogLoading(false);
+      }
+    }
+    loadCatalog();
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken]);
 
   const selectedTitle = titles.find((title) => title.id === selectedTitleId) ?? titles[0];
 
@@ -100,7 +132,27 @@ export function CineApp() {
     }))
     .sort((left, right) => right.average - left.average);
 
+  const persistState = async (title: CineTitle, state: { status?: WatchStatus; rating?: number; scope?: "me" | "both" }) => {
+    if (!accessToken || !title.tmdbId) return;
+    await fetch("/api/cine/state", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({
+        tmdbId: title.tmdbId,
+        mediaType: title.kind,
+        ...state,
+      }),
+    });
+  };
+
   const updateRating = (titleId: string, profile: ProfileKey, rating: number) => {
+    const currentTitle = titles.find((title) => title.id === titleId);
+    if (currentTitle && profile === activeProfile) {
+      void persistState(currentTitle, { rating, status: currentTitle.personal[profile].status === "none" ? "watched" : currentTitle.personal[profile].status });
+    }
     setTitles((current) =>
       current.map((title) =>
         title.id === titleId
@@ -122,6 +174,8 @@ export function CineApp() {
 
   const markWatched = (titleId: string, scope: "me" | "both") => {
     const today = new Date().toISOString().slice(0, 10);
+    const currentTitle = titles.find((title) => title.id === titleId);
+    if (currentTitle) void persistState(currentTitle, { status: "watched", scope });
     setTitles((current) =>
       current.map((title) => {
         if (title.id !== titleId) return title;
@@ -162,11 +216,11 @@ export function CineApp() {
                   key={profile.key}
                   type="button"
                   aria-pressed={activeProfile === profile.key}
-                  onClick={() => setActiveProfile(profile.key)}
-                  className={`h-9 w-9 rounded-full text-sm font-bold transition ${
+                  onClick={() => { if (!currentProfile) setPreviewProfile(profile.key); }}
+                  disabled={Boolean(currentProfile)} aria-label={currentProfile ? `Usuario activo ${profile.key}` : `Cambiar a ${profile.key}`} className={`h-9 w-9 rounded-full text-sm font-bold transition ${
                     activeProfile === profile.key
                       ? "bg-[var(--gold)] text-black"
-                      : "text-[var(--text-soft)] hover:bg-white/10"
+                      : currentProfile ? "text-[var(--muted)] opacity-45" : "text-[var(--text-soft)] hover:bg-white/10"
                   }`}
                 >
                   {profile.key}
@@ -177,6 +231,16 @@ export function CineApp() {
         </header>
 
         <section className="flex-1 px-4 pb-28 pt-4">
+          {catalogLoading && (
+            <div className="mb-4 rounded-xl border border-white/10 bg-white/6 p-3 text-sm text-[var(--text-soft)]">
+              Cargando catalogo real de plataformas...
+            </div>
+          )}
+          {catalogError && (
+            <div className="mb-4 rounded-xl border border-red-400/20 bg-red-500/12 p-3 text-sm text-red-100">
+              {catalogError}
+            </div>
+          )}
           {activeTab === "home" && (
             <HomeView
               titles={titles}
@@ -627,7 +691,7 @@ function HorizontalShelf({
         >
           <Poster title={title} size="shelf" />
           <p className="mt-2 line-clamp-2 text-sm font-semibold leading-5">{title.title}</p>
-          <p className="text-xs text-[var(--muted)]">IMDb {title.imdbRating?.toFixed(1) ?? "-"}</p>
+          <p className="text-xs text-[var(--muted)]">TMDB {title.imdbRating?.toFixed(1) ?? "-"}</p>
         </button>
       ))}
     </div>
@@ -690,7 +754,7 @@ function StatusPill({ label, status, watchedAt }: { label: ProfileKey; status: W
 function RatingStrip({ title }: { title: CineTitle }) {
   return (
     <div className="grid grid-cols-4 gap-2">
-      <Metric label="IMDb" value={title.imdbRating?.toFixed(1) ?? "-"} />
+      <Metric label="TMDB" value={title.imdbRating?.toFixed(1) ?? "-"} />
       <Metric label="RT Critica" value={title.rtTomatometer ? `${title.rtTomatometer}%` : "-"} />
       <Metric label="Popcorn" value={title.rtPopcornmeter ? `${title.rtPopcornmeter}%` : "-"} />
       <Metric label="Popular" value={Math.round(title.tmdbPopularity).toString()} />
