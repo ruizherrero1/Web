@@ -17,6 +17,10 @@ type AuthGateProps = {
 };
 
 const isLocalPreviewAllowed = process.env.NODE_ENV !== "production";
+const cineUsers = [
+  { email: "ruizherrero1@gmail.com", initials: "RR" },
+  { email: "laura.badia.s94@gmail.com", initials: "LB" },
+] as const;
 
 export function AuthGate({ children }: AuthGateProps) {
   const supabaseReady = hasSupabaseEnv();
@@ -25,11 +29,9 @@ export function AuthGate({ children }: AuthGateProps) {
   const [loaded, setLoaded] = useState(!supabaseReady);
   const [previewMode] = useState(!supabaseReady && isLocalPreviewAllowed);
   const [hasPrivateAccess, setHasPrivateAccess] = useState(false);
-  const [privatePassword, setPrivatePassword] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState<(typeof cineUsers)[number]["email"]>(cineUsers[0].email);
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [passwordSubmitting, setPasswordSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
@@ -95,35 +97,25 @@ export function AuthGate({ children }: AuthGateProps) {
     return () => subscription.unsubscribe();
   }, [supabaseReady]);
 
-  const unlockCine = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setPasswordSubmitting(true);
-    setErrorMessage("");
-
-    try {
-      const response = await fetch("/api/cine/pass", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: privatePassword }),
-      });
-      if (!response.ok) {
-        setErrorMessage("Clave de Cine incorrecta.");
-      } else {
-        setHasPrivateAccess(true);
-        setPrivatePassword("");
-      }
-    } catch {
-      setErrorMessage("No se pudo validar la clave de Cine.");
-    } finally {
-      setPasswordSubmitting(false);
-    }
-  };
   const signIn = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSubmitting(true);
     setErrorMessage("");
 
     try {
+      if (!hasPrivateAccess) {
+        const accessResponse = await fetch("/api/cine/pass", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password }),
+        });
+        if (!accessResponse.ok) {
+          setErrorMessage("Clave de Cine incorrecta.");
+          return;
+        }
+        setHasPrivateAccess(true);
+      }
+
       const supabase = createClient();
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) setErrorMessage("No se pudo iniciar sesion con esos datos.");
@@ -169,42 +161,6 @@ export function AuthGate({ children }: AuthGateProps) {
     );
   }
 
-  if (!previewMode && !hasPrivateAccess) {
-    return (
-      <main className="cine-app-shell grid min-h-screen place-items-center bg-[var(--page-bg)] px-4 py-8 text-[var(--text-main)]">
-        <form
-          className="w-full max-w-[420px] rounded-3xl border border-white/10 bg-[var(--app-bg)] p-5 shadow-2xl shadow-black/45"
-          onSubmit={unlockCine}
-        >
-          <div className="mb-6">
-            <div className="mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-[linear-gradient(145deg,#f5b84b,#9e1b32)] text-black">
-              <Clapperboard size={28} />
-            </div>
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[var(--muted)]">Clave privada</p>
-            <h1 className="mt-1 text-3xl font-semibold">Cine</h1>
-          </div>
-
-          <label className="block">
-            <span className="mb-1 block text-sm text-[var(--muted)]">Password de Cine</span>
-            <input
-              type="password"
-              value={privatePassword}
-              onChange={(event) => setPrivatePassword(event.target.value)}
-              autoComplete="current-password"
-              className="h-12 w-full rounded-xl border border-white/10 bg-black/24 px-3 outline-none focus:border-[var(--gold)]"
-              required
-            />
-          </label>
-
-          {errorMessage && <p className="mt-3 rounded-xl bg-red-500/12 p-3 text-sm text-red-200">{errorMessage}</p>}
-
-          <button type="submit" disabled={passwordSubmitting} className="action-button action-button-gold mt-5 w-full">
-            {passwordSubmitting ? "Validando..." : "Entrar"}
-          </button>
-        </form>
-      </main>
-    );
-  }
   if (!previewMode && (!session || !profile)) {
     return (
       <main className="cine-app-shell grid min-h-screen place-items-center bg-[var(--page-bg)] px-4 py-8 text-[var(--text-main)]">
@@ -220,18 +176,22 @@ export function AuthGate({ children }: AuthGateProps) {
             <h1 className="mt-1 text-3xl font-semibold">Cine</h1>
           </div>
 
-          <div className="space-y-3">
-            <label className="block">
-              <span className="mb-1 block text-sm text-[var(--muted)]">Email</span>
-              <input
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                autoComplete="email"
-                className="h-12 w-full rounded-xl border border-white/10 bg-black/24 px-3 outline-none focus:border-[var(--gold)]"
-                required
-              />
-            </label>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-black/24 p-1">
+              {cineUsers.map((user) => (
+                <button
+                  key={user.email}
+                  type="button"
+                  onClick={() => setEmail(user.email)}
+                  aria-pressed={email === user.email}
+                  className={`h-12 rounded-xl text-sm font-bold transition ${
+                    email === user.email ? "bg-[var(--gold)] text-black" : "text-[var(--text-soft)] hover:bg-white/8"
+                  }`}
+                >
+                  {user.initials}
+                </button>
+              ))}
+            </div>
             <label className="block">
               <span className="mb-1 block text-sm text-[var(--muted)]">Password</span>
               <input
