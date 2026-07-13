@@ -41,15 +41,6 @@ type DbState = {
   cine_profiles?: { initials: ProfileKey } | null;
 };
 
-type LegacyMark = {
-  tmdb_id: number;
-  media_type: MediaKind;
-  status: WatchStatus;
-  rating: number | null;
-  watched_at: string | null;
-  cine_profiles?: { initials: ProfileKey } | null;
-};
-
 type DbPending = {
   title_id: string;
   cine_pending_categories?: { name: PendingCategory } | null;
@@ -66,16 +57,17 @@ export async function GET(request: Request) {
   if ("error" in auth) return auth.error;
 
   try {
-    const [titles, availability, states, legacyMarks, pending] = await Promise.all([
+    // Legacy cine_user_marks are copied into cine_user_title_states by the sync
+    // (migrateLegacyMarks), so the catalog no longer reads that table on every load.
+    const [titles, availability, states, pending] = await Promise.all([
       fetchAll<DbTitle>(() => auth.supabase.from("cine_titles").select(titleSelect).order("tmdb_popularity", { ascending: false })),
       fetchAll<DbAvailability>(() => auth.supabase.from("cine_availability").select("title_id, provider_key, monetization").eq("region", "ES")),
       fetchAll<DbState>(() => auth.supabase.from("cine_user_title_states").select("title_id, status, rating, watched_at, cine_profiles(initials)")),
-      fetchAll<LegacyMark>(() => auth.supabase.from("cine_user_marks").select("tmdb_id, media_type, status, rating, watched_at, cine_profiles(initials)")),
       fetchAll<DbPending>(() => auth.supabase.from("cine_pending_items").select("title_id, cine_pending_categories(name), cine_profiles(initials)")),
     ]);
 
     return NextResponse.json({
-      titles: mapTitles(titles, availability, states, legacyMarks, pending),
+      titles: mapTitles(titles, availability, states, pending),
       attribution: "Source: TMDB. Streaming availability data is powered by TMDB/JustWatch.",
     });
   } catch (error) {
@@ -102,17 +94,14 @@ function mapTitles(
   titles: DbTitle[],
   availability: DbAvailability[],
   states: DbState[],
-  legacyMarks: LegacyMark[],
   pending: DbPending[]
 ): CineTitle[] {
   const availabilityByTitle = groupBy(availability, (item) => item.title_id);
   const statesByTitle = groupBy(states, (item) => item.title_id);
   const pendingByTitle = groupBy(pending, (item) => item.title_id);
-  const legacyByTmdb = groupBy(legacyMarks, (item) => `${item.media_type}-${item.tmdb_id}`);
 
   return titles.map((title) => {
     const titleStates = statesByTitle.get(title.id) ?? [];
-    const legacyStates = legacyByTmdb.get(`${title.media_type}-${title.tmdb_id}`) ?? [];
     const pendingItems = pendingByTitle.get(title.id) ?? [];
 
     return {
@@ -147,17 +136,15 @@ function mapTitles(
       ),
       addedBy: pendingItems.find((item) => item.cine_profiles?.initials)?.cine_profiles?.initials,
       personal: {
-        RR: resolvePersonalState(titleStates, legacyStates, "RR"),
-        LB: resolvePersonalState(titleStates, legacyStates, "LB"),
+        RR: resolvePersonalState(titleStates, "RR"),
+        LB: resolvePersonalState(titleStates, "LB"),
       },
     };
   });
 }
 
-function resolvePersonalState(states: DbState[], legacyMarks: LegacyMark[], profile: ProfileKey) {
-  const state = states.find((item) => item.cine_profiles?.initials === profile);
-  const legacy = legacyMarks.find((item) => item.cine_profiles?.initials === profile);
-  const source = state ?? legacy;
+function resolvePersonalState(states: DbState[], profile: ProfileKey) {
+  const source = states.find((item) => item.cine_profiles?.initials === profile);
   return {
     status: source?.status ?? "none",
     rating: source?.rating ?? undefined,

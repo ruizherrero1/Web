@@ -38,6 +38,13 @@ Notas externas (OMDb):
 
 ## Cambios recientes
 
+### 2026-07-13 - Rendimiento: catalog deja de leer marcas legacy
+
+Rama `cine/perf-catalog` (apilada sobre `cine/fix-ratings-bugs`).
+
+- `/api/cine/catalog` ya no lee `cine_user_marks` en cada carga (una query menos de tabla completa + join). El `sync` sigue migrando esas marcas a `cine_user_title_states` via `migrateLegacyMarks`, que es la unica fuente que lee el catalogo.
+- Riesgo controlado: una marca legacy de un titulo aun no importado no aparece hasta el siguiente sync (se autocorrige). No hay perdida de datos.
+
 ### 2026-07-13 - Notas multi-fuente (OMDb), runtime real y filtros
 
 Rama `cine/fix-ratings-bugs` (pendiente de merge). Requiere aplicar migracion y anadir `OMDB_API_KEY` en Vercel.
