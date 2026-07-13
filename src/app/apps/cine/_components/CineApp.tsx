@@ -4,8 +4,11 @@ import {
   BookmarkPlus,
   Check,
   Clapperboard,
+  ExternalLink,
   Film,
   Home,
+  Info,
+  Play,
   RefreshCw,
   Search,
   SlidersHorizontal,
@@ -19,7 +22,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { demoTitles, pendingCategories, profiles, providers } from "../_lib/cine-data";
-import type { CineTitle, MediaKind, MonetizationType, PendingCategory, ProfileKey, ProviderKey, WatchStatus } from "../_lib/types";
+import type { CineTitle, MediaKind, MonetizationType, PendingCategory, ProfileKey, ProviderKey, TitleDetail, WatchStatus } from "../_lib/types";
 
 type TabKey = "home" | "explore" | "pending" | "ratings";
 
@@ -98,6 +101,7 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
   const [syncMessage, setSyncMessage] = useState("");
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [selectedTitleId, setSelectedTitleId] = useState<string>(demoTitles[0]?.id ?? "");
+  const [detailTitle, setDetailTitle] = useState<CineTitle | null>(null);
 
   const loadCatalog = async () => {
     if (!accessToken) return;
@@ -352,6 +356,7 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
               updateRating={updateRating}
               activeProfile={activeProfile}
               updatePendingCategory={updatePendingCategory}
+              openDetail={setDetailTitle}
             />
           )}
           {activeTab === "explore" && (
@@ -364,6 +369,7 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
               markWatched={markWatched}
               activeProfile={activeProfile}
               updatePendingCategory={updatePendingCategory}
+              openDetail={setDetailTitle}
             />
           )}
           {activeTab === "pending" && (
@@ -401,6 +407,17 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
           </div>
         </nav>
       </div>
+      {detailTitle && (
+        <TitleDetailSheet
+          title={detailTitle}
+          accessToken={accessToken}
+          activeProfile={activeProfile}
+          onClose={() => setDetailTitle(null)}
+          markWatched={markWatched}
+          updateRating={updateRating}
+          updatePendingCategory={updatePendingCategory}
+        />
+      )}
     </main>
   );
 }
@@ -414,7 +431,8 @@ function HomeView({
   markWatched,
   updateRating,
   activeProfile,
-  updatePendingCategory
+  updatePendingCategory,
+  openDetail
 }: {
   titles: CineTitle[];
   selectedTitle: CineTitle;
@@ -425,6 +443,7 @@ function HomeView({
   updateRating: (titleId: string, profile: ProfileKey, rating: number | null) => void;
   activeProfile: ProfileKey;
   updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
+  openDetail: (title: CineTitle) => void;
 }) {
   const unwatchedTogether = titles.filter(
     (title) => title.personal.RR.status !== "watched" && title.personal.LB.status !== "watched"
@@ -438,6 +457,7 @@ function HomeView({
         markWatched={markWatched}
         updateRating={updateRating}
         updatePendingCategory={updatePendingCategory}
+        openDetail={openDetail}
       />
 
       <div className="grid grid-cols-3 gap-2">
@@ -486,7 +506,8 @@ function ExploreView({
   updateRating,
   markWatched,
   activeProfile,
-  updatePendingCategory
+  updatePendingCategory,
+  openDetail
 }: {
   titles: CineTitle[];
   filters: Filters;
@@ -496,6 +517,7 @@ function ExploreView({
   markWatched: (titleId: string, scope: "me" | "both") => void;
   activeProfile: ProfileKey;
   updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
+  openDetail: (title: CineTitle) => void;
 }) {
   return (
     <div className="space-y-4">
@@ -625,6 +647,7 @@ function ExploreView({
             updateRating={updateRating}
             markWatched={markWatched}
             updatePendingCategory={updatePendingCategory}
+            openDetail={openDetail}
           />
         ))}
       </div>
@@ -711,13 +734,15 @@ function HeroTitle({
   activeProfile,
   markWatched,
   updateRating,
-  updatePendingCategory
+  updatePendingCategory,
+  openDetail
 }: {
   title: CineTitle;
   activeProfile: ProfileKey;
   markWatched: (titleId: string, scope: "me" | "both") => void;
   updateRating: (titleId: string, profile: ProfileKey, rating: number | null) => void;
   updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
+  openDetail: (title: CineTitle) => void;
 }) {
   return (
     <article className="overflow-hidden rounded-2xl border border-white/10 bg-white/7 shadow-xl shadow-black/25">
@@ -741,6 +766,14 @@ function HeroTitle({
         </div>
       </div>
       <div className="space-y-3 p-4">
+        <button
+          type="button"
+          onClick={() => openDetail(title)}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/8 py-2.5 text-sm font-semibold text-[var(--text-soft)] transition hover:bg-white/14"
+        >
+          <Info size={17} />
+          Ver ficha completa
+        </button>
         <RatingStrip title={title} />
         <WatchStatusStrip title={title} activeProfile={activeProfile} />
         <div className="grid grid-cols-2 gap-2">
@@ -772,13 +805,186 @@ function HeroTitle({
   );
 }
 
+function TitleDetailSheet({
+  title,
+  accessToken,
+  activeProfile,
+  onClose,
+  markWatched,
+  updateRating,
+  updatePendingCategory
+}: {
+  title: CineTitle;
+  accessToken?: string;
+  activeProfile: ProfileKey;
+  onClose: () => void;
+  markWatched: (titleId: string, scope: "me" | "both") => void;
+  updateRating: (titleId: string, profile: ProfileKey, rating: number | null) => void;
+  updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
+}) {
+  const [detail, setDetail] = useState<TitleDetail | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!accessToken || !title.tmdbId) return;
+    const controller = new AbortController();
+    async function loadDetail() {
+      setLoading(true);
+      setError("");
+      try {
+        const response = await fetch(`/api/cine/title/${title.tmdbId}?type=${title.kind}`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          signal: controller.signal,
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error ?? "No se pudo cargar la ficha.");
+        setDetail(payload.detail as TitleDetail);
+      } catch (err) {
+        if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "No se pudo cargar la ficha.");
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }
+    void loadDetail();
+    return () => controller.abort();
+  }, [accessToken, title.tmdbId, title.kind]);
+
+  const runtime = detail?.runtimeMinutes ?? title.runtimeMinutes;
+  const overview = detail?.overview || title.overview;
+  const detailProviders = detail?.flatrateProviders.length ? detail.flatrateProviders : title.availability.map((item) => item.provider);
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-center">
+      <button type="button" aria-label="Cerrar ficha" onClick={onClose} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+      <div className="relative z-10 mt-auto flex max-h-[92vh] w-full max-w-[520px] flex-col overflow-y-auto rounded-t-3xl border border-white/10 bg-[var(--app-bg)] pb-[calc(env(safe-area-inset-bottom)+16px)] shadow-2xl shadow-black/60">
+        <div
+          className="min-h-[220px] bg-cover bg-center"
+          style={{ backgroundImage: `linear-gradient(180deg, rgba(8,7,7,0.2), rgba(8,7,7,0.94) 78%), url(https://image.tmdb.org/t/p/w780${title.backdropPath || title.posterPath})` }}
+        >
+          <div className="flex items-start justify-between p-3">
+            <span className="h-1.5 w-12 rounded-full bg-white/25" />
+            <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full bg-black/50 text-white" aria-label="Cerrar">
+              <X size={18} />
+            </button>
+          </div>
+          <div className="px-4 pb-4 pt-16">
+            <h2 className="text-2xl font-semibold leading-tight">{title.title}</h2>
+            {title.originalTitle && title.originalTitle !== title.title && (
+              <p className="mt-1 text-sm font-semibold text-[var(--gold)]">{title.originalTitle}</p>
+            )}
+            <p className="mt-1 text-sm text-[var(--text-soft)]">
+              {[title.year || null, runtime ? formatRuntime(runtime) : null, (detail?.genres ?? title.genres).slice(0, 3).join(" / ") || null].filter(Boolean).join(" - ")}
+            </p>
+            {detail?.tagline && <p className="mt-2 text-sm italic text-[var(--muted)]">{detail.tagline}</p>}
+          </div>
+        </div>
+
+        <div className="space-y-4 p-4">
+          <RatingStrip title={title} />
+
+          {detail?.trailerKey && (
+            <a
+              href={`https://www.youtube.com/watch?v=${detail.trailerKey}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--gold)] py-3 text-sm font-bold text-black"
+            >
+              <Play size={18} />
+              Ver trailer
+            </a>
+          )}
+
+          {overview && <p className="text-sm leading-6 text-[var(--text-soft)]">{overview}</p>}
+
+          {detailProviders.length > 0 && (
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Disponible en</p>
+              <div className="flex flex-wrap gap-1.5">
+                {[...new Set(detailProviders)].map((provider) => {
+                  const data = providers.find((item) => item.key === provider);
+                  return (
+                    <span key={provider} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/34 px-2.5 py-1.5 text-xs font-semibold text-[var(--text-soft)]">
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: data?.accent ?? "var(--gold)" }} />
+                      {data?.name ?? provider}
+                    </span>
+                  );
+                })}
+                {detail?.justwatchLink && (
+                  <a href={detail.justwatchLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/8 px-2.5 py-1.5 text-xs font-semibold text-[var(--text-soft)]">
+                    Donde ver <ExternalLink size={12} />
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+
+          {detail && detail.directors.length > 0 && (
+            <p className="text-sm text-[var(--text-soft)]">
+              <span className="text-[var(--muted)]">{title.kind === "movie" ? "Direccion: " : "Creado por: "}</span>
+              {detail.directors.join(", ")}
+            </p>
+          )}
+
+          {detail && detail.cast.length > 0 && (
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Reparto</p>
+              <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1">
+                {detail.cast.map((person) => (
+                  <div key={`${person.name}-${person.character ?? ""}`} className="w-[84px] shrink-0 text-center">
+                    <div
+                      className="mx-auto h-[110px] w-[84px] overflow-hidden rounded-xl bg-white/6 bg-cover bg-center"
+                      style={person.profilePath ? { backgroundImage: `url(https://image.tmdb.org/t/p/w185${person.profilePath})` } : undefined}
+                    />
+                    <p className="mt-1 line-clamp-2 text-xs font-semibold leading-4">{person.name}</p>
+                    {person.character && <p className="line-clamp-1 text-[10px] text-[var(--muted)]">{person.character}</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {loading && <p className="text-sm text-[var(--muted)]">Cargando ficha...</p>}
+          {error && <p className="rounded-xl bg-red-500/12 p-3 text-sm text-red-200">{error}</p>}
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => markWatched(title.id, "me")}
+              className={`action-button ${title.personal[activeProfile].status === "watched" ? "action-button-done" : ""}`}
+            >
+              <Check size={18} />
+              Vista por mi
+            </button>
+            <button
+              type="button"
+              onClick={() => markWatched(title.id, "both")}
+              className={`action-button action-button-gold ${title.personal.RR.status === "watched" && title.personal.LB.status === "watched" ? "action-button-done" : ""}`}
+            >
+              <Users size={18} />
+              Vista ambos
+            </button>
+          </div>
+          <RatingPicker
+            activeProfile={activeProfile}
+            value={title.personal[activeProfile].rating}
+            onChange={(rating) => updateRating(title.id, activeProfile, rating)}
+          />
+          <PendingCategoryControls title={title} updatePendingCategory={updatePendingCategory} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TitleCard({
   title,
   onSelect,
   activeProfile,
   updateRating,
   markWatched,
-  updatePendingCategory
+  updatePendingCategory,
+  openDetail
 }: {
   title: CineTitle;
   onSelect: () => void;
@@ -786,6 +992,7 @@ function TitleCard({
   updateRating: (titleId: string, profile: ProfileKey, rating: number | null) => void;
   markWatched: (titleId: string, scope: "me" | "both") => void;
   updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
+  openDetail: (title: CineTitle) => void;
 }) {
   return (
     <article className="rounded-2xl border border-white/8 bg-white/6 p-3">
@@ -813,13 +1020,16 @@ function TitleCard({
           </div>
         </div>
       </button>
-      <div className="mt-3 grid grid-cols-[1fr_auto_auto] gap-2">
+      <div className="mt-3 grid grid-cols-[1fr_auto_auto_auto] gap-2">
         <RatingPicker
           activeProfile={activeProfile}
           value={title.personal[activeProfile].rating}
           onChange={(rating) => updateRating(title.id, activeProfile, rating)}
           compact
         />
+        <button type="button" onClick={() => openDetail(title)} className="icon-action" aria-label="Ver ficha">
+          <Info size={18} />
+        </button>
         <button type="button" onClick={() => updatePendingCategory(title.id, "Para ver juntos", title.pendingCategories.includes("Para ver juntos") ? "remove" : "add")} className={`icon-action ${title.pendingCategories.includes("Para ver juntos") ? "action-button-done" : ""}`} aria-label="Pendiente para ver juntos">
           <BookmarkPlus size={18} />
         </button>

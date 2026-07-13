@@ -38,6 +38,14 @@ Notas externas (OMDb):
 
 ## Cambios recientes
 
+### 2026-07-13 - Ficha de detalle por titulo
+
+Rama `cine/title-detail` (apilada sobre `cine/cron-sync`).
+
+- Nueva `GET /api/cine/title/[tmdbId]?type=movie|series` que llama a TMDB (`append_to_response=credits,videos,watch/providers`) y cachea 24h. Devuelve reparto, direccion/creadores, trailer de YouTube, runtime, generos, proveedores flatrate ES y enlace JustWatch.
+- Frontend: bottom-sheet `TitleDetailSheet` con backdrop, sinopsis, trailer, reparto (scroll horizontal), proveedores y los controles de nota/visto/pendiente. Se abre desde "Ver ficha completa" en el Hero y el icono info de cada tarjeta.
+- Datos compartidos (no por-usuario) => cacheados; no golpea TMDB en cada apertura.
+
 ### 2026-07-13 - Sync reutilizable + Vercel Cron
 
 Rama `cine/cron-sync` (apilada sobre `cine/perf-catalog`).

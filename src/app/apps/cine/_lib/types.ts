@@ -34,6 +34,27 @@ export type PersonalState = {
   watchedAt?: string;
 };
 
+export type TitleCredit = {
+  name: string;
+  character?: string;
+  profilePath?: string;
+};
+
+export type TitleDetail = {
+  tmdbId: number;
+  kind: MediaKind;
+  title: string;
+  tagline?: string;
+  overview: string;
+  runtimeMinutes?: number;
+  genres: string[];
+  cast: TitleCredit[];
+  directors: string[];
+  trailerKey?: string;
+  justwatchLink?: string;
+  flatrateProviders: ProviderKey[];
+};
+
 export type CineTitle = {
   id: string;
   tmdbId?: number;
