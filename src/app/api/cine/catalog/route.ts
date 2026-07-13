@@ -53,41 +53,24 @@ type DbPending = {
 
 export const dynamic = "force-dynamic";
 
+const pageSize = 1000;
+const titleSelect = "id, tmdb_id, media_type, title, original_title, overview, poster_path, backdrop_path, release_year, runtime_label, genres, tmdb_vote, tmdb_popularity, imdb_rating, imdb_votes, rt_tomatometer, rt_popcornmeter";
+
 export async function GET(request: Request) {
   const auth = await requireCineProfile(request);
   if ("error" in auth) return auth.error;
 
   try {
-    const { data: titles, error: titlesError } = await auth.supabase
-      .from("cine_titles")
-      .select(
-        "id, tmdb_id, media_type, title, original_title, overview, poster_path, backdrop_path, release_year, runtime_label, genres, tmdb_vote, tmdb_popularity, imdb_rating, imdb_votes, rt_tomatometer, rt_popcornmeter"
-      )
-      .order("tmdb_popularity", { ascending: false })
-      .limit(2500);
-
-    if (titlesError) throw titlesError;
-
-    const [availabilityResult, statesResult, legacyMarksResult, pendingResult] = await Promise.all([
-      auth.supabase.from("cine_availability").select("title_id, provider_key, monetization").eq("region", "ES"),
-      auth.supabase.from("cine_user_title_states").select("title_id, status, rating, watched_at, cine_profiles(initials)"),
-      auth.supabase.from("cine_user_marks").select("tmdb_id, media_type, status, rating, watched_at, cine_profiles(initials)"),
-      auth.supabase.from("cine_pending_items").select("title_id, cine_pending_categories(name), cine_profiles(initials)"),
+    const [titles, availability, states, legacyMarks, pending] = await Promise.all([
+      fetchAll<DbTitle>(() => auth.supabase.from("cine_titles").select(titleSelect).order("tmdb_popularity", { ascending: false })),
+      fetchAll<DbAvailability>(() => auth.supabase.from("cine_availability").select("title_id, provider_key, monetization").eq("region", "ES")),
+      fetchAll<DbState>(() => auth.supabase.from("cine_user_title_states").select("title_id, status, rating, watched_at, cine_profiles(initials)")),
+      fetchAll<LegacyMark>(() => auth.supabase.from("cine_user_marks").select("tmdb_id, media_type, status, rating, watched_at, cine_profiles(initials)")),
+      fetchAll<DbPending>(() => auth.supabase.from("cine_pending_items").select("title_id, cine_pending_categories(name), cine_profiles(initials)")),
     ]);
 
-    if (availabilityResult.error) throw availabilityResult.error;
-    if (statesResult.error) throw statesResult.error;
-    if (legacyMarksResult.error) throw legacyMarksResult.error;
-    if (pendingResult.error) throw pendingResult.error;
-
     return NextResponse.json({
-      titles: mapTitles(
-        (titles ?? []) as DbTitle[],
-        (availabilityResult.data ?? []) as unknown as DbAvailability[],
-        (statesResult.data ?? []) as unknown as DbState[],
-        (legacyMarksResult.data ?? []) as unknown as LegacyMark[],
-        (pendingResult.data ?? []) as unknown as DbPending[]
-      ),
+      titles: mapTitles(titles, availability, states, legacyMarks, pending),
       attribution: "Source: TMDB. Streaming availability data is powered by TMDB/JustWatch.",
     });
   } catch (error) {
@@ -96,6 +79,17 @@ export async function GET(request: Request) {
       { status: 500 }
     );
   }
+}
+
+async function fetchAll<T>(createQuery: () => any): Promise<T[]> {
+  const rows: T[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await createQuery().range(from, from + pageSize - 1);
+    if (error) throw error;
+    rows.push(...((data ?? []) as T[]));
+    if (!data || data.length < pageSize) break;
+  }
+  return rows;
 }
 
 function mapTitles(
