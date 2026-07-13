@@ -198,3 +198,95 @@ body[data-mundial-standalone="true"] main {
 .travelkit-app-shell input {
   font-size: 16px;
 }
+
+/* Cine embebido en /apps/cine */
+.cine-app-shell {
+  --page-bg: #050404;
+  --app-bg: #0a0809;
+  --panel: #151011;
+  --text-main: #fff8ec;
+  --text-soft: #dccfc0;
+  --muted: #998c7c;
+  --gold: #f4ba55;
+  --wine: #9e1b32;
+  --emerald: #44d19d;
+  font-family: Arial, Helvetica, sans-serif;
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+}
+
+.cine-app-shell button,
+.cine-app-shell input,
+.cine-app-shell select {
+  font: inherit;
+}
+
+.cine-app-shell select option {
+  background: #141111;
+  color: var(--text-main);
+}
+
+.cine-app-shell .line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.cine-app-shell .line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.cine-app-shell .action-button,
+.action-button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-main);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.cine-app-shell .action-button-gold,
+.action-button-gold {
+  background: var(--gold);
+  color: #060504;
+}
+
+.cine-app-shell .icon-action {
+  display: grid;
+  min-height: 48px;
+  width: 48px;
+  place-items: center;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(244, 186, 85, 0.94);
+  color: #060504;
+}
+
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  body:has(.cine-app-shell) > header,
+  body:has(.cine-app-shell) > footer {
+    display: none;
+  }
+
+  body:has(.cine-app-shell) main {
+    min-height: 100vh;
+  }
+}
+
+@media (max-width: 768px) {
+  body:has(.cine-app-shell) > header,
+  body:has(.cine-app-shell) > footer {
+    display: none;
+  }
+}
+
