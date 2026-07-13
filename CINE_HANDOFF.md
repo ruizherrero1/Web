@@ -38,6 +38,15 @@ Notas externas (OMDb):
 
 ## Cambios recientes
 
+### 2026-07-13 - PWA real con service worker
+
+Rama `cine/pwa` (apilada sobre `cine/today-recommender`).
+
+- `public/cine-sw.js`: cachea app shell + `_next/static` (SWR), posters/backdrops de `image.tmdb.org` (cache-first, offline) y la ultima respuesta de `/api/cine/catalog` (network-first, lectura offline).
+- `src/app/cine.webmanifest/route.ts` (manifest propio, scope `/apps/cine`), `apps/cine/apple-icon.tsx` (icono claqueta) y `apps/cine/layout.tsx` (enlaza manifest + `appleWebApp`, registra el SW via `CineServiceWorker`).
+- `globals.css`: en `display-mode: standalone` oculta cabecera/pie del sitio para las paginas de Cine (patron travelkit/mundial).
+- Alcance: instalable + offline de solo lectura. Las escrituras (nota/visto/pendiente) siguen requiriendo conexion; background-sync queda como fase 2.
+
 ### 2026-07-13 - Recomendador "Que vemos hoy"
 
 Rama `cine/today-recommender` (apilada sobre `cine/title-detail`).

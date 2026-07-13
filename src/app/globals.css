@@ -199,6 +199,19 @@ body[data-mundial-standalone="true"] main {
   font-size: 16px;
 }
 
+/* Cine como app instalada: al abrir desde el icono de inicio (display-mode:
+   standalone) se oculta la cabecera/pie del sitio para que se vea como app. */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  body:has(.cine-app-shell) > header,
+  body:has(.cine-app-shell) > footer {
+    display: none;
+  }
+
+  body:has(.cine-app-shell) main {
+    min-height: 100vh;
+  }
+}
+
 /* Cine embebido en /apps/cine */
 .cine-app-shell {
   --page-bg: #050404;
