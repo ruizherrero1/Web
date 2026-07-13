@@ -31,14 +31,13 @@ Frontend:
 
 APIs internas:
 
-- `src/app/api/cine/pass/route.ts`: valida la password compartida y crea cookie.
-- `src/app/api/cine/session/route.ts`: devuelve sesion privada.
-- `src/app/api/cine/catalog/route.ts`: lee catalogo importado desde Supabase.
+- `src/app/api/cine/pass/route.ts`: valida la password compartida y crea cookie. `GET` indica si la cookie es valida.
+- `src/app/api/cine/catalog/route.ts`: lee catalogo importado desde Supabase (incluye notas multi-fuente y runtime).
 - `src/app/api/cine/state/route.ts`: guarda/borra notas y estados por usuario.
 - `src/app/api/cine/pending/route.ts`: listas de pendientes.
-- `src/app/api/cine/sync/route.ts`: importa/actualiza catalogo desde proveedores externos.
-- `src/app/api/cine/_tmdb.ts`: integracion TMDB.
-- `src/app/api/cine/_rt.ts`: integracion RapidAPI/Rotten Tomatoes si hay key configurada.
+- `src/app/api/cine/sync/route.ts`: importa/actualiza catalogo desde TMDB y enriquece notas via OMDb.
+- `src/app/api/cine/_tmdb.ts`: integracion TMDB (discover + generos).
+- `src/app/api/cine/_omdb.ts`: enriquecimiento de notas via OMDb (IMDb, Rotten Tomatoes, Metacritic y runtime).
 
 ## Datos y Supabase
 
@@ -62,6 +61,7 @@ Migraciones relevantes:
 - `supabase/migrations/20260713_cine_rls_helper.sql`
 - `supabase/migrations/20260713_cine_api_grants.sql`
 - `supabase/migrations/20260713_cine_search_titles.sql`
+- `supabase/migrations/20260713_cine_rating_sources.sql` (imdb_id, runtime_minutes, metascore, ratings_updated_at)
 
 Notas de seguridad:
 
@@ -81,16 +81,18 @@ Plataformas objetivo:
 - HBO Max / Max
 - Disney+
 
-Rotten Tomatoes:
+OMDb (fuente de notas externas, activa):
 
-- Hay codigo preparado para RapidAPI (`ROTTENTOMATO_RAPIDAPI_KEY`), pero la key no debe subirse a Vercel sin aprobacion explicita del propietario.
-- En pruebas, el endpoint RapidAPI devolvio muchos campos de score como `null`; tratarlo como fuente secundaria y cacheada.
-- La API oficial de Rotten Tomatoes/Fandango no parece ser self-service publica normal; normalmente requiere aprobacion/licencia.
+- Una sola llamada a OMDb devuelve nota IMDb, votos IMDb, Rotten Tomatoes (criticos), Metacritic y runtime real.
+- Requiere `OMDB_API_KEY` en Vercel. Free tier ~1000 req/dia.
+- `sync` enriquece por lotes (`CINE_OMDB_SYNC_LIMIT`, 40 por defecto) ordenando por `ratings_updated_at` (los mas obsoletos primero) para cubrir el catalogo en varias sincronizaciones sin agotar la cuota.
+- Cada titulo enriquecido guarda `imdb_id` para futuras consultas estables por id.
+- Sustituye a la antigua integracion RapidAPI/Rotten Tomatoes, que devolvia muchos `null` y se ha eliminado (`_ratings.ts`).
 
-IMDb:
+Notas:
 
-- TMDB puede enlazar con IDs externos, pero las notas IMDb reales requieren fuente adicional.
-- OMDb puede servir como alternativa para ratings externos si se aporta key.
+- `cine_titles.tmdb_vote` (nota media TMDB) sigue siendo la nota base siempre presente.
+- `rt_popcornmeter` (audiencia RT) no lo aporta OMDb; queda sin fuente por ahora.
 
 ## Variables de entorno
 
@@ -98,15 +100,20 @@ Configuradas en Vercel:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `TMDB_API_KEY`
+- `TMDB_API_KEY` (o `TMDB_ACCESS_TOKEN`; el codigo prefiere el token bearer si existe)
 - `CINE_SHARED_PASSWORD`
-- `CINE_COOKIE_SECRET`
+- `CINE_COOKIE_SECRET` (importante: sin este, la cookie se deriva de la propia password)
 - `CINE_TMDB_PAGES_PER_PROVIDER`
 
-Pendientes/opcionales:
+Notas externas (OMDb):
 
-- `ROTTENTOMATO_RAPIDAPI_KEY`
-- `CINE_RT_SYNC_LIMIT`
+- `OMDB_API_KEY` (necesaria para poblar IMDb/RT/Metacritic/runtime)
+- `CINE_OMDB_SYNC_LIMIT` (opcional, titulos enriquecidos por sync; 40 por defecto, max 200)
+
+Cron y sync automatico:
+
+- `CRON_SECRET` (Vercel lo envia como `Authorization: Bearer` a las rutas cron; protege `/api/cine/cron/sync`).
+- `SUPABASE_SERVICE_ROLE_KEY` (solo servidor; el cron no tiene sesion de usuario y usa cliente service-role que salta RLS). NUNCA exponer en cliente ni `NEXT_PUBLIC_*`.
 
 No escribir valores reales en este fichero.
 

@@ -29,13 +29,78 @@ Catalogo:
 - Se anadio campo `search_titles` para buscar en ingles y espanol.
 - La sincronizacion final del 2026-07-13 dejo 1228/1228 titulos con `searchTitles` poblado.
 
-Rotten Tomatoes:
+Notas externas (OMDb):
 
-- Hay integracion preparada via RapidAPI, pero la key no esta configurada en Vercel por seguridad.
-- Antes de subir la key, pedir aprobacion explicita al propietario.
-- En pruebas, RapidAPI devolvio muchos scores `null`; no asumir que cubre todo el catalogo.
+- Fuente activa para IMDb, Rotten Tomatoes (criticos), Metacritic y runtime real.
+- Requiere `OMDB_API_KEY` en Vercel. Se enriquece por lotes en cada sync (los mas obsoletos primero).
+- Con ~1228 titulos y free tier ~1000/dia, el catalogo tarda varios syncs en cubrirse. Los titulos sin datos muestran "-".
+- La antigua integracion RapidAPI/Rotten Tomatoes se ha eliminado (devolvia demasiados `null`).
 
 ## Cambios recientes
+
+### 2026-07-13 - Deuda menor: limpieza + consenso + offline writes
+
+Rama `cine/pwa` (mismo stack; ultimo commit).
+
+- Eliminado `rt_popcornmeter` del tipo, del catalog y de los datos demo (OMDb no lo aporta; la columna DB queda huerfana, se puede dropear cuando se quiera).
+- Recomendador "Hoy": ahora combina el blend de notas (60%) con **consenso por afinidad de genero RR/LB** (40%). Para "los dos" usa el minimo de las afinidades previstas (favorece que guste a ambos).
+- PWA fase 2: **cola de escrituras offline** (`_lib/offline.ts`). Nota/visto/pendiente sin conexion se encolan en localStorage y se reproducen al reconectar (`flushQueue` en `CineApp`). El badge muestra "N por sincronizar" / "Sincronizando".
+
+### 2026-07-13 - PWA real con service worker
+
+Rama `cine/pwa` (apilada sobre `cine/today-recommender`).
+
+- `public/cine-sw.js`: cachea app shell + `_next/static` (SWR), posters/backdrops de `image.tmdb.org` (cache-first, offline) y la ultima respuesta de `/api/cine/catalog` (network-first, lectura offline).
+- `src/app/cine.webmanifest/route.ts` (manifest propio, scope `/apps/cine`), `apps/cine/apple-icon.tsx` (icono claqueta) y `apps/cine/layout.tsx` (enlaza manifest + `appleWebApp`, registra el SW via `CineServiceWorker`).
+- `globals.css`: en `display-mode: standalone` oculta cabecera/pie del sitio para las paginas de Cine (patron travelkit/mundial).
+- Alcance: instalable + offline de solo lectura. Las escrituras (nota/visto/pendiente) siguen requiriendo conexion; background-sync queda como fase 2.
+
+### 2026-07-13 - Recomendador "Que vemos hoy"
+
+Rama `cine/today-recommender` (apilada sobre `cine/title-detail`).
+
+- Nueva pestana "Hoy" (nav pasa a 5 columnas) con heuristica 100% en cliente: filtra por no-vista (para los dos o solo el usuario activo), plataforma disponible, genero y tiempo disponible (usa runtime real). Puntua con blend de todas las notas (IMDb/TMDB/RT/Metacritic) y muestra 5 sugerencias.
+- Boton "Otra ruleta" (jitter determinista por seed) para rebarajar entre las buenas candidatas.
+- Sin backend nuevo. Evolucion futura: consenso por afinidad de genero RR/LB.
+
+### 2026-07-13 - Ficha de detalle por titulo
+
+Rama `cine/title-detail` (apilada sobre `cine/cron-sync`).
+
+- Nueva `GET /api/cine/title/[tmdbId]?type=movie|series` que llama a TMDB (`append_to_response=credits,videos,watch/providers`) y cachea 24h. Devuelve reparto, direccion/creadores, trailer de YouTube, runtime, generos, proveedores flatrate ES y enlace JustWatch.
+- Frontend: bottom-sheet `TitleDetailSheet` con backdrop, sinopsis, trailer, reparto (scroll horizontal), proveedores y los controles de nota/visto/pendiente. Se abre desde "Ver ficha completa" en el Hero y el icono info de cada tarjeta.
+- Datos compartidos (no por-usuario) => cacheados; no golpea TMDB en cada apertura.
+
+### 2026-07-13 - Sync reutilizable + Vercel Cron
+
+Rama `cine/cron-sync` (apilada sobre `cine/perf-catalog`).
+
+- Logica de sync extraida a `src/app/api/cine/_sync.ts` (`runCatalogSync`, `runRatingsSync`). La ruta `POST /api/cine/sync` queda fina y con `maxDuration = 60`.
+- Nueva ruta `GET /api/cine/cron/sync` protegida por `CRON_SECRET`, usa cliente service-role (`getSupabaseServiceClient`) porque el cron no tiene sesion de usuario. `?mode=ratings` hace solo enriquecimiento OMDb.
+- `vercel.json`: cron semanal (lunes 5:00, sync completo) y diario (5:00, solo ratings). El boton manual sigue igual.
+- Env nuevas: `CRON_SECRET`, `SUPABASE_SERVICE_ROLE_KEY` (solo servidor).
+- Nota Hobby: Vercel Hobby limita crons a ~1/dia y 2 jobs; esta config (semanal + diario) encaja. Si se quiere mas frecuencia, hace falta Pro.
+
+### 2026-07-13 - Rendimiento: catalog deja de leer marcas legacy
+
+Rama `cine/perf-catalog` (apilada sobre `cine/fix-ratings-bugs`).
+
+- `/api/cine/catalog` ya no lee `cine_user_marks` en cada carga (una query menos de tabla completa + join). El `sync` sigue migrando esas marcas a `cine_user_title_states` via `migrateLegacyMarks`, que es la unica fuente que lee el catalogo.
+- Riesgo controlado: una marca legacy de un titulo aun no importado no aparece hasta el siguiente sync (se autocorrige). No hay perdida de datos.
+
+### 2026-07-13 - Notas multi-fuente (OMDb), runtime real y filtros
+
+Rama `cine/fix-ratings-bugs` (pendiente de merge). Requiere aplicar migracion y anadir `OMDB_API_KEY` en Vercel.
+
+- Bug: `sync` definia el enriquecimiento de Rotten Tomatoes pero nunca lo llamaba. Ahora `sync` llama a `enrichRatingsFromOmdb` y devuelve `ratings: { attempted, updated, skipped }`.
+- Bug: el filtro "IMDb minimo" filtraba en realidad por nota TMDB (imdb_rating nunca se poblaba). Ahora hay notas reales por fuente.
+- Bug: la UI optimista de notas/vistos no revertia si la API fallaba. `persistState` recarga el catalogo y avisa si falla.
+- OMDb aporta en una sola llamada: nota IMDb, votos IMDb, Rotten Tomatoes (criticos), Metacritic y runtime real. Se elimina la integracion RapidAPI (`_ratings.ts`).
+- Nueva migracion `20260713_cine_rating_sources.sql`: `imdb_id`, `runtime_minutes`, `metascore`, `ratings_updated_at`.
+- `catalog` expone `tmdbRating` (separado de `imdbRating`), `metascore`, `runtimeMinutes`, `imdbId`, `ratingsUpdatedAt`.
+- Frontend: RatingStrip muestra TMDB / IMDb / RT / Metacritic. Filtro por fuente de nota + nota minima normalizada. Nuevos filtros de estado: sin ver juntos, vistas RR, vistas LB, sin nota mia, en pendientes. Runtime real en metadatos.
+- Env nuevas: `OMDB_API_KEY`, `CINE_OMDB_SYNC_LIMIT`. Retiradas: `ROTTENTOMATO_RAPIDAPI_KEY`, `CINE_RT_SYNC_LIMIT`.
+- Verificado en local: `npm run lint` (0 errores), `npm run build` OK. Falta probar en produccion con la migracion aplicada y `OMDB_API_KEY` puesta.
 
 ### 2026-07-13 - Documentacion viva y mejoras de catalogo
 
@@ -86,11 +151,12 @@ Alta prioridad:
 
 Media prioridad:
 
-- Anadir fuente fiable para IMDb/Rotten Tomatoes si el propietario aporta acceso valido.
-- Guardar timestamp `ratings_updated_at` si se refrescan ratings externos.
-- Mejorar "Pendientes" con categorias reales, mover entre categorias y quitar rapido.
-- Anadir filtros "vistas por RR", "vistas por LB", "pendientes", "sin nota", "sin ver".
-- Anadir recomendaciones: mejor nota compartida, diferencias RR/LB, popular con baja duracion.
+- [HECHO 2026-07-13] Fuente fiable de IMDb/RT/Metacritic via OMDb.
+- [HECHO 2026-07-13] Timestamp `ratings_updated_at` al refrescar ratings externos.
+- [HECHO 2026-07-13] Filtros "vistas por RR", "vistas por LB", "pendientes", "sin nota mia", "sin ver juntos" y filtro por fuente de nota.
+- Mejorar "Pendientes" con mover entre categorias y quitar rapido desde la vista de pendientes.
+- Anadir recomendaciones: mejor nota compartida, diferencias RR/LB, popular con baja duracion (ya hay runtime real para esto).
+- Cron semanal de sync (Vercel Cron) manteniendo el boton manual, y trocear el sync para no arriesgar timeout.
 
 Ideas futuras:
 

@@ -1,0 +1,6 @@
+{
+  "crons": [
+    { "path": "/api/cine/cron/sync", "schedule": "0 5 * * 1" },
+    { "path": "/api/cine/cron/sync?mode=ratings", "schedule": "0 5 * * *" }
+  ]
+}

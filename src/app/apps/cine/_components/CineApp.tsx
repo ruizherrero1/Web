@@ -4,8 +4,12 @@ import {
   BookmarkPlus,
   Check,
   Clapperboard,
+  Dices,
+  ExternalLink,
   Film,
   Home,
+  Info,
+  Play,
   RefreshCw,
   Search,
   SlidersHorizontal,
@@ -19,19 +23,31 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { demoTitles, pendingCategories, profiles, providers } from "../_lib/cine-data";
-import type { CineTitle, MediaKind, MonetizationType, PendingCategory, ProfileKey, ProviderKey, WatchStatus } from "../_lib/types";
+import { enqueueMutation, flushQueue } from "../_lib/offline";
+import type { CineTitle, MediaKind, MonetizationType, PendingCategory, ProfileKey, ProviderKey, TitleDetail, WatchStatus } from "../_lib/types";
 
-type TabKey = "home" | "explore" | "pending" | "ratings";
+function isOffline() {
+  return typeof navigator !== "undefined" && !navigator.onLine;
+}
+
+type TabKey = "home" | "explore" | "today" | "pending" | "ratings";
+
+type TodayScope = "me" | "both";
 
 type SortKey = "top_rated" | "popular" | "recent";
+
+type RatingSource = "tmdb" | "imdb" | "rt" | "metacritic";
+
+type WatchFilter = "all" | "unseen_together" | "watched_rr" | "watched_lb" | "no_rating_mine" | "pending";
 
 type Filters = {
   query: string;
   kind: "all" | MediaKind;
   providers: ProviderKey[];
   monetization: "all" | MonetizationType;
-  minImdb: number;
-  onlyUnwatchedTogether: boolean;
+  ratingSource: RatingSource;
+  minScore: number;
+  watch: WatchFilter;
   sort: SortKey;
 };
 
@@ -40,14 +56,32 @@ const initialFilters: Filters = {
   kind: "all",
   providers: [],
   monetization: "all",
-  minImdb: 0,
-  onlyUnwatchedTogether: false,
+  ratingSource: "tmdb",
+  minScore: 0,
+  watch: "all",
   sort: "top_rated"
+};
+
+const ratingSources: Record<RatingSource, { label: string; unit: "ten" | "percent" }> = {
+  tmdb: { label: "TMDB", unit: "ten" },
+  imdb: { label: "IMDb", unit: "ten" },
+  rt: { label: "Rotten Tomatoes", unit: "percent" },
+  metacritic: { label: "Metacritic", unit: "percent" }
+};
+
+const watchFilterLabels: Record<WatchFilter, string> = {
+  all: "Todas",
+  unseen_together: "Sin ver juntos",
+  watched_rr: "Vistas RR",
+  watched_lb: "Vistas LB",
+  no_rating_mine: "Sin nota mia",
+  pending: "En pendientes"
 };
 
 const navItems = [
   { key: "home", label: "Inicio", icon: Home },
   { key: "explore", label: "Buscar", icon: Search },
+  { key: "today", label: "Hoy", icon: Dices },
   { key: "pending", label: "Pendientes", icon: BookmarkPlus },
   { key: "ratings", label: "Notas", icon: Star }
 ] as const;
@@ -76,6 +110,7 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
   const [syncMessage, setSyncMessage] = useState("");
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [selectedTitleId, setSelectedTitleId] = useState<string>(demoTitles[0]?.id ?? "");
+  const [detailTitle, setDetailTitle] = useState<CineTitle | null>(null);
 
   const loadCatalog = async () => {
     if (!accessToken) return;
@@ -98,7 +133,23 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
   };
 
   useEffect(() => {
+    // Load the real catalog once the access token is available (fetch-on-mount).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadCatalog();
+  }, [accessToken]);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    // Replay any queued offline writes now and whenever the connection returns.
+    const flush = async () => {
+      if (isOffline()) return;
+      const flushed = await flushQueue(accessToken);
+      if (flushed > 0) await loadCatalog();
+    };
+    void flush();
+    window.addEventListener("online", flush);
+    return () => window.removeEventListener("online", flush);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken]);
 
   const selectedTitle = titles.find((title) => title.id === selectedTitleId) ?? titles[0];
@@ -116,14 +167,15 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
         if (filters.monetization !== "all" && !title.availability.some((item) => item.type === filters.monetization)) {
           return false;
         }
-        if (title.imdbRating && title.imdbRating < filters.minImdb) return false;
-        if (filters.onlyUnwatchedTogether) {
-          return title.personal.RR.status !== "watched" && title.personal.LB.status !== "watched";
+        if (filters.minScore > 0) {
+          const score = scoreForSource(title, filters.ratingSource);
+          if (score === undefined || score < filters.minScore) return false;
         }
+        if (!passesWatchFilter(title, filters.watch, activeProfile)) return false;
         return true;
       })
       .sort((left, right) => sortTitles(left, right, filters.sort));
-  }, [filters, titles]);
+  }, [filters, titles, activeProfile]);
 
   const pendingTitles = titles.filter((title) => title.pendingCategories.length > 0);
   const watchedTogether = titles.filter(
@@ -138,18 +190,31 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
 
   const persistState = async (title: CineTitle, state: { status?: WatchStatus; rating?: number | null; scope?: "me" | "both" }) => {
     if (!accessToken || !title.tmdbId) return;
-    await fetch("/api/cine/state", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({
-        tmdbId: title.tmdbId,
-        mediaType: title.kind,
-        ...state,
-      }),
-    });
+    const body = { tmdbId: title.tmdbId, mediaType: title.kind, ...state };
+
+    // Offline: keep the optimistic change and queue it to sync on reconnect.
+    if (isOffline()) {
+      enqueueMutation({ kind: "state", body });
+      setSyncMessage("Sin conexion: el cambio se guardara al reconectar.");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/cine/state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify(body),
+      });
+      // On a server rejection re-sync so the UI never keeps an unpersisted change.
+      if (!response.ok) {
+        setCatalogError("No se pudo guardar el cambio. Recargando estado real.");
+        await loadCatalog();
+      }
+    } catch {
+      // Network dropped mid-request: queue it instead of losing the change.
+      enqueueMutation({ kind: "state", body });
+      setSyncMessage("Sin conexion: el cambio se guardara al reconectar.");
+    }
   };
 
   const syncCatalog = async () => {
@@ -164,9 +229,9 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "No se pudo actualizar el catalogo.");
-      const rt = payload.rottenTomatoes;
-      const rtText = rt && !rt.skipped ? ` RT: ${rt.updated ?? 0}/${rt.attempted ?? 0}.` : "";
-      setSyncMessage(`Catalogo actualizado: ${payload.titles ?? 0} titulos importados.${rtText}`);
+      const ratings = payload.ratings;
+      const ratingsText = ratings && !ratings.skipped ? ` Notas externas: ${ratings.updated ?? 0}/${ratings.attempted ?? 0}.` : "";
+      setSyncMessage(`Catalogo actualizado: ${payload.titles ?? 0} titulos importados.${ratingsText}`);
       await loadCatalog();
     } catch (error) {
       setCatalogError(error instanceof Error ? error.message : "No se pudo actualizar el catalogo.");
@@ -190,19 +255,25 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
       })
     );
 
-    const response = await fetch("/api/cine/pending", {
-      method: action === "add" ? "POST" : "DELETE",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({
-        tmdbId: currentTitle.tmdbId,
-        mediaType: currentTitle.kind,
-        category,
-      }),
-    });
-    if (!response.ok) await loadCatalog();
+    const body = { tmdbId: currentTitle.tmdbId, mediaType: currentTitle.kind, category };
+
+    if (isOffline()) {
+      enqueueMutation({ kind: "pending", action, body });
+      setSyncMessage("Sin conexion: el cambio se guardara al reconectar.");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/cine/pending", {
+        method: action === "add" ? "POST" : "DELETE",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) await loadCatalog();
+    } catch {
+      enqueueMutation({ kind: "pending", action, body });
+      setSyncMessage("Sin conexion: el cambio se guardara al reconectar.");
+    }
   };
   const updateRating = (titleId: string, profile: ProfileKey, rating: number | null) => {
     const currentTitle = titles.find((title) => title.id === titleId);
@@ -316,6 +387,7 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
               updateRating={updateRating}
               activeProfile={activeProfile}
               updatePendingCategory={updatePendingCategory}
+              openDetail={setDetailTitle}
             />
           )}
           {activeTab === "explore" && (
@@ -328,6 +400,16 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
               markWatched={markWatched}
               activeProfile={activeProfile}
               updatePendingCategory={updatePendingCategory}
+              openDetail={setDetailTitle}
+            />
+          )}
+          {activeTab === "today" && (
+            <TodayView
+              titles={titles}
+              activeProfile={activeProfile}
+              setSelectedTitleId={setSelectedTitleId}
+              setActiveTab={setActiveTab}
+              openDetail={setDetailTitle}
             />
           )}
           {activeTab === "pending" && (
@@ -344,7 +426,7 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
         </section>
 
         <nav className="fixed bottom-0 left-1/2 z-30 w-full max-w-[520px] -translate-x-1/2 border-t border-white/10 bg-[rgba(10,8,9,0.92)] px-3 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-2 backdrop-blur-xl">
-          <div className="grid grid-cols-4 gap-1">
+          <div className="grid grid-cols-5 gap-1">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.key;
@@ -365,6 +447,17 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
           </div>
         </nav>
       </div>
+      {detailTitle && (
+        <TitleDetailSheet
+          title={detailTitle}
+          accessToken={accessToken}
+          activeProfile={activeProfile}
+          onClose={() => setDetailTitle(null)}
+          markWatched={markWatched}
+          updateRating={updateRating}
+          updatePendingCategory={updatePendingCategory}
+        />
+      )}
     </main>
   );
 }
@@ -378,7 +471,8 @@ function HomeView({
   markWatched,
   updateRating,
   activeProfile,
-  updatePendingCategory
+  updatePendingCategory,
+  openDetail
 }: {
   titles: CineTitle[];
   selectedTitle: CineTitle;
@@ -389,6 +483,7 @@ function HomeView({
   updateRating: (titleId: string, profile: ProfileKey, rating: number | null) => void;
   activeProfile: ProfileKey;
   updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
+  openDetail: (title: CineTitle) => void;
 }) {
   const unwatchedTogether = titles.filter(
     (title) => title.personal.RR.status !== "watched" && title.personal.LB.status !== "watched"
@@ -402,6 +497,7 @@ function HomeView({
         markWatched={markWatched}
         updateRating={updateRating}
         updatePendingCategory={updatePendingCategory}
+        openDetail={openDetail}
       />
 
       <div className="grid grid-cols-3 gap-2">
@@ -450,7 +546,8 @@ function ExploreView({
   updateRating,
   markWatched,
   activeProfile,
-  updatePendingCategory
+  updatePendingCategory,
+  openDetail
 }: {
   titles: CineTitle[];
   filters: Filters;
@@ -460,6 +557,7 @@ function ExploreView({
   markWatched: (titleId: string, scope: "me" | "both") => void;
   activeProfile: ProfileKey;
   updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
+  openDetail: (title: CineTitle) => void;
 }) {
   return (
     <div className="space-y-4">
@@ -489,14 +587,17 @@ function ExploreView({
           >
             Series
           </FilterChip>
-          <FilterChip
-            active={filters.onlyUnwatchedTogether}
-            onClick={() =>
-              setFilters((current) => ({ ...current, onlyUnwatchedTogether: !current.onlyUnwatchedTogether }))
-            }
-          >
-            No vistas
-          </FilterChip>
+        </div>
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          {(Object.keys(watchFilterLabels) as WatchFilter[]).map((key) => (
+            <FilterChip
+              key={key}
+              active={filters.watch === key}
+              onClick={() => setFilters((current) => ({ ...current, watch: key }))}
+            >
+              {watchFilterLabels[key]}
+            </FilterChip>
+          ))}
         </div>
         <div className="space-y-2 rounded-xl bg-black/24 p-2">
           <div className="flex items-center gap-2 text-xs font-semibold text-[var(--muted)]">
@@ -548,20 +649,32 @@ function ExploreView({
             <option value="recent">Mas nuevas</option>
           </SelectField>
         </div>
-        <label className="block rounded-xl bg-black/24 px-3 py-2">
-          <span className="mb-2 flex items-center justify-between text-xs text-[var(--muted)]">
-            IMDb minimo <strong className="text-[var(--text-main)]">{filters.minImdb || "Cualquiera"}</strong>
-          </span>
-          <input
-            type="range"
-            min="0"
-            max="9"
-            step="1"
-            value={filters.minImdb}
-            onChange={(event) => setFilters((current) => ({ ...current, minImdb: Number(event.target.value) }))}
-            className="w-full accent-[var(--gold)]"
-          />
-        </label>
+        <div className="grid grid-cols-2 gap-2">
+          <SelectField
+            icon={Star}
+            value={filters.ratingSource}
+            onChange={(value) => setFilters((current) => ({ ...current, ratingSource: value as RatingSource }))}
+          >
+            <option value="tmdb">Nota TMDB</option>
+            <option value="imdb">Nota IMDb</option>
+            <option value="rt">Rotten Tomatoes</option>
+            <option value="metacritic">Metacritic</option>
+          </SelectField>
+          <label className="block rounded-xl bg-black/24 px-3 py-2">
+            <span className="mb-1 flex items-center justify-between text-xs text-[var(--muted)]">
+              Nota min <strong className="text-[var(--text-main)]">{formatMinScore(filters)}</strong>
+            </span>
+            <input
+              type="range"
+              min="0"
+              max="10"
+              step="1"
+              value={filters.minScore}
+              onChange={(event) => setFilters((current) => ({ ...current, minScore: Number(event.target.value) }))}
+              className="w-full accent-[var(--gold)]"
+            />
+          </label>
+        </div>
       </div>
 
       <div className="space-y-3">
@@ -574,9 +687,146 @@ function ExploreView({
             updateRating={updateRating}
             markWatched={markWatched}
             updatePendingCategory={updatePendingCategory}
+            openDetail={openDetail}
           />
         ))}
       </div>
+    </div>
+  );
+}
+
+function TodayView({
+  titles,
+  activeProfile,
+  setSelectedTitleId,
+  setActiveTab,
+  openDetail
+}: {
+  titles: CineTitle[];
+  activeProfile: ProfileKey;
+  setSelectedTitleId: (id: string) => void;
+  setActiveTab: (tab: TabKey) => void;
+  openDetail: (title: CineTitle) => void;
+}) {
+  const [scope, setScope] = useState<TodayScope>("both");
+  const [maxMinutes, setMaxMinutes] = useState(0);
+  const [selectedProviders, setSelectedProviders] = useState<ProviderKey[]>([]);
+  const [genre, setGenre] = useState("");
+  const [seed, setSeed] = useState(0);
+
+  const allGenres = useMemo(() => {
+    const set = new Set<string>();
+    for (const title of titles) for (const g of title.genres) set.add(g);
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [titles]);
+
+  const affinityRR = useMemo(() => genreAffinity(titles, "RR"), [titles]);
+  const affinityLB = useMemo(() => genreAffinity(titles, "LB"), [titles]);
+
+  const picks = useMemo(() => {
+    const candidates = titles.filter((title) => {
+      const unseen = scope === "both"
+        ? title.personal.RR.status !== "watched" && title.personal.LB.status !== "watched"
+        : title.personal[activeProfile].status !== "watched";
+      if (!unseen) return false;
+      if (selectedProviders.length && !selectedProviders.some((p) => title.availability.some((a) => a.provider === p))) return false;
+      if (maxMinutes > 0 && title.runtimeMinutes && title.runtimeMinutes > maxMinutes) return false;
+      if (genre && !title.genres.includes(genre)) return false;
+      return true;
+    });
+
+    return candidates
+      .map((title) => {
+        const base = blendedScore(title);
+        // Consensus by learned genre taste: for "both" favour titles both would like (min),
+        // for a single user use only their own affinity. Falls back to the rating blend.
+        const consensus =
+          scope === "both"
+            ? consensusAffinity(title, affinityRR, affinityLB)
+            : predictedAffinity(title, activeProfile === "RR" ? affinityRR : affinityLB);
+        const score = base * 0.6 + (consensus ?? base) * 0.4 + seededJitter(title.id, seed);
+        return { title, score };
+      })
+      .sort((left, right) => right.score - left.score)
+      .slice(0, 5);
+  }, [titles, scope, activeProfile, selectedProviders, maxMinutes, genre, seed, affinityRR, affinityLB]);
+
+  return (
+    <div className="space-y-4">
+      <SectionHeader icon={Dices} title="Que vemos hoy" />
+
+      <div className="space-y-3 rounded-2xl border border-white/10 bg-white/6 p-3">
+        <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-black/24 p-1">
+          <button type="button" onClick={() => setScope("both")} aria-pressed={scope === "both"} className={`h-10 rounded-xl text-sm font-bold transition ${scope === "both" ? "bg-[var(--gold)] text-black" : "text-[var(--text-soft)]"}`}>
+            Para los dos
+          </button>
+          <button type="button" onClick={() => setScope("me")} aria-pressed={scope === "me"} className={`h-10 rounded-xl text-sm font-bold transition ${scope === "me" ? "bg-[var(--gold)] text-black" : "text-[var(--text-soft)]"}`}>
+            Solo {activeProfile}
+          </button>
+        </div>
+
+        <div className="space-y-2 rounded-xl bg-black/24 p-2">
+          <div className="flex items-center gap-2 text-xs font-semibold text-[var(--muted)]"><Ticket size={15} /> Plataformas</div>
+          <div className="flex flex-wrap gap-1.5">
+            {providers.map((provider) => (
+              <FilterChip
+                key={provider.key}
+                active={selectedProviders.includes(provider.key)}
+                onClick={() => setSelectedProviders((current) => current.includes(provider.key) ? current.filter((p) => p !== provider.key) : [...current, provider.key])}
+              >
+                {provider.shortName}
+              </FilterChip>
+            ))}
+          </div>
+        </div>
+
+        <SelectField icon={Film} value={genre} onChange={setGenre}>
+          <option value="">Cualquier genero</option>
+          {allGenres.map((g) => (
+            <option key={g} value={g}>{g}</option>
+          ))}
+        </SelectField>
+
+        <label className="block rounded-xl bg-black/24 px-3 py-2">
+          <span className="mb-1 flex items-center justify-between text-xs text-[var(--muted)]">
+            Tiempo disponible <strong className="text-[var(--text-main)]">{maxMinutes ? formatRuntime(maxMinutes) : "Cualquiera"}</strong>
+          </span>
+          <input type="range" min="0" max="210" step="15" value={maxMinutes} onChange={(event) => setMaxMinutes(Number(event.target.value))} className="w-full accent-[var(--gold)]" />
+        </label>
+
+        <button type="button" onClick={() => setSeed((value) => value + 1)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--gold)] py-3 text-sm font-bold text-black">
+          <Dices size={18} /> Otra ruleta
+        </button>
+      </div>
+
+      {picks.length === 0 ? (
+        <p className="rounded-xl border border-white/10 bg-white/6 p-4 text-sm text-[var(--muted)]">
+          No hay candidatas con estos filtros. Prueba a quitar plataforma, genero o tiempo.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {picks.map(({ title, score }) => (
+            <div key={title.id} className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/6 p-3">
+              <button type="button" onClick={() => { setSelectedTitleId(title.id); setActiveTab("home"); }} className="shrink-0">
+                <Poster title={title} size="small" />
+              </button>
+              <div className="min-w-0 flex-1">
+                <p className="truncate font-semibold">{title.title}</p>
+                <p className="truncate text-sm text-[var(--muted)]">{formatTitleMeta(title, true)}</p>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {title.availability.slice(0, 3).map((item) => (
+                    <ProviderBadge key={`${title.id}-${item.provider}`} provider={item.provider} type={item.type} compact />
+                  ))}
+                </div>
+              </div>
+              <div className="flex flex-col items-center gap-1">
+                <div className="grid h-11 w-11 place-items-center rounded-full bg-[var(--gold)] text-sm font-black text-black">{score.toFixed(1)}</div>
+                <button type="button" onClick={() => openDetail(title)} className="text-[10px] font-semibold text-[var(--muted)]">Ficha</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -660,13 +910,15 @@ function HeroTitle({
   activeProfile,
   markWatched,
   updateRating,
-  updatePendingCategory
+  updatePendingCategory,
+  openDetail
 }: {
   title: CineTitle;
   activeProfile: ProfileKey;
   markWatched: (titleId: string, scope: "me" | "both") => void;
   updateRating: (titleId: string, profile: ProfileKey, rating: number | null) => void;
   updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
+  openDetail: (title: CineTitle) => void;
 }) {
   return (
     <article className="overflow-hidden rounded-2xl border border-white/10 bg-white/7 shadow-xl shadow-black/25">
@@ -690,6 +942,14 @@ function HeroTitle({
         </div>
       </div>
       <div className="space-y-3 p-4">
+        <button
+          type="button"
+          onClick={() => openDetail(title)}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/8 py-2.5 text-sm font-semibold text-[var(--text-soft)] transition hover:bg-white/14"
+        >
+          <Info size={17} />
+          Ver ficha completa
+        </button>
         <RatingStrip title={title} />
         <WatchStatusStrip title={title} activeProfile={activeProfile} />
         <div className="grid grid-cols-2 gap-2">
@@ -721,13 +981,186 @@ function HeroTitle({
   );
 }
 
+function TitleDetailSheet({
+  title,
+  accessToken,
+  activeProfile,
+  onClose,
+  markWatched,
+  updateRating,
+  updatePendingCategory
+}: {
+  title: CineTitle;
+  accessToken?: string;
+  activeProfile: ProfileKey;
+  onClose: () => void;
+  markWatched: (titleId: string, scope: "me" | "both") => void;
+  updateRating: (titleId: string, profile: ProfileKey, rating: number | null) => void;
+  updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
+}) {
+  const [detail, setDetail] = useState<TitleDetail | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!accessToken || !title.tmdbId) return;
+    const controller = new AbortController();
+    async function loadDetail() {
+      setLoading(true);
+      setError("");
+      try {
+        const response = await fetch(`/api/cine/title/${title.tmdbId}?type=${title.kind}`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          signal: controller.signal,
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error ?? "No se pudo cargar la ficha.");
+        setDetail(payload.detail as TitleDetail);
+      } catch (err) {
+        if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "No se pudo cargar la ficha.");
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }
+    void loadDetail();
+    return () => controller.abort();
+  }, [accessToken, title.tmdbId, title.kind]);
+
+  const runtime = detail?.runtimeMinutes ?? title.runtimeMinutes;
+  const overview = detail?.overview || title.overview;
+  const detailProviders = detail?.flatrateProviders.length ? detail.flatrateProviders : title.availability.map((item) => item.provider);
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-center">
+      <button type="button" aria-label="Cerrar ficha" onClick={onClose} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+      <div className="relative z-10 mt-auto flex max-h-[92vh] w-full max-w-[520px] flex-col overflow-y-auto rounded-t-3xl border border-white/10 bg-[var(--app-bg)] pb-[calc(env(safe-area-inset-bottom)+16px)] shadow-2xl shadow-black/60">
+        <div
+          className="min-h-[220px] bg-cover bg-center"
+          style={{ backgroundImage: `linear-gradient(180deg, rgba(8,7,7,0.2), rgba(8,7,7,0.94) 78%), url(https://image.tmdb.org/t/p/w780${title.backdropPath || title.posterPath})` }}
+        >
+          <div className="flex items-start justify-between p-3">
+            <span className="h-1.5 w-12 rounded-full bg-white/25" />
+            <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full bg-black/50 text-white" aria-label="Cerrar">
+              <X size={18} />
+            </button>
+          </div>
+          <div className="px-4 pb-4 pt-16">
+            <h2 className="text-2xl font-semibold leading-tight">{title.title}</h2>
+            {title.originalTitle && title.originalTitle !== title.title && (
+              <p className="mt-1 text-sm font-semibold text-[var(--gold)]">{title.originalTitle}</p>
+            )}
+            <p className="mt-1 text-sm text-[var(--text-soft)]">
+              {[title.year || null, runtime ? formatRuntime(runtime) : null, (detail?.genres ?? title.genres).slice(0, 3).join(" / ") || null].filter(Boolean).join(" - ")}
+            </p>
+            {detail?.tagline && <p className="mt-2 text-sm italic text-[var(--muted)]">{detail.tagline}</p>}
+          </div>
+        </div>
+
+        <div className="space-y-4 p-4">
+          <RatingStrip title={title} />
+
+          {detail?.trailerKey && (
+            <a
+              href={`https://www.youtube.com/watch?v=${detail.trailerKey}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--gold)] py-3 text-sm font-bold text-black"
+            >
+              <Play size={18} />
+              Ver trailer
+            </a>
+          )}
+
+          {overview && <p className="text-sm leading-6 text-[var(--text-soft)]">{overview}</p>}
+
+          {detailProviders.length > 0 && (
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Disponible en</p>
+              <div className="flex flex-wrap gap-1.5">
+                {[...new Set(detailProviders)].map((provider) => {
+                  const data = providers.find((item) => item.key === provider);
+                  return (
+                    <span key={provider} className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/34 px-2.5 py-1.5 text-xs font-semibold text-[var(--text-soft)]">
+                      <span className="h-2 w-2 rounded-full" style={{ backgroundColor: data?.accent ?? "var(--gold)" }} />
+                      {data?.name ?? provider}
+                    </span>
+                  );
+                })}
+                {detail?.justwatchLink && (
+                  <a href={detail.justwatchLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/8 px-2.5 py-1.5 text-xs font-semibold text-[var(--text-soft)]">
+                    Donde ver <ExternalLink size={12} />
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+
+          {detail && detail.directors.length > 0 && (
+            <p className="text-sm text-[var(--text-soft)]">
+              <span className="text-[var(--muted)]">{title.kind === "movie" ? "Direccion: " : "Creado por: "}</span>
+              {detail.directors.join(", ")}
+            </p>
+          )}
+
+          {detail && detail.cast.length > 0 && (
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Reparto</p>
+              <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-1">
+                {detail.cast.map((person) => (
+                  <div key={`${person.name}-${person.character ?? ""}`} className="w-[84px] shrink-0 text-center">
+                    <div
+                      className="mx-auto h-[110px] w-[84px] overflow-hidden rounded-xl bg-white/6 bg-cover bg-center"
+                      style={person.profilePath ? { backgroundImage: `url(https://image.tmdb.org/t/p/w185${person.profilePath})` } : undefined}
+                    />
+                    <p className="mt-1 line-clamp-2 text-xs font-semibold leading-4">{person.name}</p>
+                    {person.character && <p className="line-clamp-1 text-[10px] text-[var(--muted)]">{person.character}</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {loading && <p className="text-sm text-[var(--muted)]">Cargando ficha...</p>}
+          {error && <p className="rounded-xl bg-red-500/12 p-3 text-sm text-red-200">{error}</p>}
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => markWatched(title.id, "me")}
+              className={`action-button ${title.personal[activeProfile].status === "watched" ? "action-button-done" : ""}`}
+            >
+              <Check size={18} />
+              Vista por mi
+            </button>
+            <button
+              type="button"
+              onClick={() => markWatched(title.id, "both")}
+              className={`action-button action-button-gold ${title.personal.RR.status === "watched" && title.personal.LB.status === "watched" ? "action-button-done" : ""}`}
+            >
+              <Users size={18} />
+              Vista ambos
+            </button>
+          </div>
+          <RatingPicker
+            activeProfile={activeProfile}
+            value={title.personal[activeProfile].rating}
+            onChange={(rating) => updateRating(title.id, activeProfile, rating)}
+          />
+          <PendingCategoryControls title={title} updatePendingCategory={updatePendingCategory} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TitleCard({
   title,
   onSelect,
   activeProfile,
   updateRating,
   markWatched,
-  updatePendingCategory
+  updatePendingCategory,
+  openDetail
 }: {
   title: CineTitle;
   onSelect: () => void;
@@ -735,6 +1168,7 @@ function TitleCard({
   updateRating: (titleId: string, profile: ProfileKey, rating: number | null) => void;
   markWatched: (titleId: string, scope: "me" | "both") => void;
   updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
+  openDetail: (title: CineTitle) => void;
 }) {
   return (
     <article className="rounded-2xl border border-white/8 bg-white/6 p-3">
@@ -748,7 +1182,7 @@ function TitleCard({
               <p className="truncate text-sm text-[var(--muted)]">{formatTitleMeta(title, true)}</p>
             </div>
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-black/35 text-sm font-bold">
-              {title.imdbRating?.toFixed(1) ?? "-"}
+              {(title.imdbRating ?? title.tmdbRating)?.toFixed(1) ?? "-"}
             </span>
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
@@ -762,13 +1196,16 @@ function TitleCard({
           </div>
         </div>
       </button>
-      <div className="mt-3 grid grid-cols-[1fr_auto_auto] gap-2">
+      <div className="mt-3 grid grid-cols-[1fr_auto_auto_auto] gap-2">
         <RatingPicker
           activeProfile={activeProfile}
           value={title.personal[activeProfile].rating}
           onChange={(rating) => updateRating(title.id, activeProfile, rating)}
           compact
         />
+        <button type="button" onClick={() => openDetail(title)} className="icon-action" aria-label="Ver ficha">
+          <Info size={18} />
+        </button>
         <button type="button" onClick={() => updatePendingCategory(title.id, "Para ver juntos", title.pendingCategories.includes("Para ver juntos") ? "remove" : "add")} className={`icon-action ${title.pendingCategories.includes("Para ver juntos") ? "action-button-done" : ""}`} aria-label="Pendiente para ver juntos">
           <BookmarkPlus size={18} />
         </button>
@@ -798,7 +1235,7 @@ function HorizontalShelf({
         >
           <Poster title={title} size="shelf" />
           <p className="mt-2 line-clamp-2 text-sm font-semibold leading-5">{title.title}</p>
-          <p className="text-xs text-[var(--muted)]">TMDB {title.imdbRating?.toFixed(1) ?? "-"}</p>
+          <p className="text-xs text-[var(--muted)]">TMDB {title.tmdbRating?.toFixed(1) ?? "-"}</p>
         </button>
       ))}
     </div>
@@ -861,10 +1298,10 @@ function StatusPill({ label, status, watchedAt }: { label: ProfileKey; status: W
 function RatingStrip({ title }: { title: CineTitle }) {
   return (
     <div className="grid grid-cols-4 gap-2">
-      <Metric label="TMDB" value={title.imdbRating?.toFixed(1) ?? "-"} />
-      <Metric label="RT Critica" value={title.rtTomatometer ? `${title.rtTomatometer}%` : "-"} />
-      <Metric label="Popcorn" value={title.rtPopcornmeter ? `${title.rtPopcornmeter}%` : "-"} />
-      <Metric label="Popular" value={Math.round(title.tmdbPopularity).toString()} />
+      <Metric label="TMDB" value={title.tmdbRating?.toFixed(1) ?? "-"} />
+      <Metric label="IMDb" value={title.imdbRating?.toFixed(1) ?? "-"} />
+      <Metric label="RT" value={title.rtTomatometer != null ? `${title.rtTomatometer}%` : "-"} />
+      <Metric label="Metacritic" value={title.metascore != null ? `${title.metascore}` : "-"} />
     </div>
   );
 }
@@ -1108,8 +1545,102 @@ function sortTitles(left: CineTitle, right: CineTitle, sort: SortKey) {
 }
 
 function formatTitleMeta(title: CineTitle, compact = false) {
-  const parts = [title.year || null, compact ? title.runtimeLabel : title.runtimeLabel, compact ? null : title.genres.slice(0, 2).join(" / ")].filter(Boolean);
+  const runtime = title.runtimeMinutes
+    ? formatRuntime(title.runtimeMinutes)
+    : title.kind === "movie"
+      ? "Pelicula"
+      : "Serie";
+  const parts = [title.year || null, runtime, compact ? null : title.genres.slice(0, 2).join(" / ")].filter(Boolean);
   return parts.join(" - ");
+}
+
+function formatRuntime(minutes: number) {
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `${hours}h ${rest}m` : `${hours}h`;
+}
+
+// Normalises every rating source to a 0-10 scale so one slider can filter any of them.
+function scoreForSource(title: CineTitle, source: RatingSource): number | undefined {
+  if (source === "tmdb") return title.tmdbRating;
+  if (source === "imdb") return title.imdbRating;
+  if (source === "rt") return title.rtTomatometer != null ? title.rtTomatometer / 10 : undefined;
+  return title.metascore != null ? title.metascore / 10 : undefined;
+}
+
+function passesWatchFilter(title: CineTitle, watch: WatchFilter, activeProfile: ProfileKey): boolean {
+  if (watch === "all") return true;
+  if (watch === "unseen_together") {
+    return title.personal.RR.status !== "watched" && title.personal.LB.status !== "watched";
+  }
+  if (watch === "watched_rr") return title.personal.RR.status === "watched";
+  if (watch === "watched_lb") return title.personal.LB.status === "watched";
+  if (watch === "no_rating_mine") return !title.personal[activeProfile].rating;
+  return title.pendingCategories.length > 0;
+}
+
+// Average rating a profile has given, per genre (learned taste on a 1-10 scale).
+function genreAffinity(titles: CineTitle[], profile: ProfileKey) {
+  const sums = new Map<string, { total: number; count: number }>();
+  for (const title of titles) {
+    const rating = title.personal[profile].rating;
+    if (!rating) continue;
+    for (const genre of title.genres) {
+      const entry = sums.get(genre) ?? { total: 0, count: 0 };
+      entry.total += rating;
+      entry.count += 1;
+      sums.set(genre, entry);
+    }
+  }
+  const affinity = new Map<string, number>();
+  for (const [genre, { total, count }] of sums) affinity.set(genre, total / count);
+  return affinity;
+}
+
+// Predicted score for a title from a profile's genre affinity; undefined if no signal.
+function predictedAffinity(title: CineTitle, affinity: Map<string, number>) {
+  const values = title.genres.map((genre) => affinity.get(genre)).filter((value): value is number => value !== undefined);
+  if (!values.length) return undefined;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+// For "both": favour titles both would like by taking the lower predicted affinity.
+function consensusAffinity(title: CineTitle, affinityRR: Map<string, number>, affinityLB: Map<string, number>) {
+  const rr = predictedAffinity(title, affinityRR);
+  const lb = predictedAffinity(title, affinityLB);
+  if (rr === undefined && lb === undefined) return undefined;
+  if (rr === undefined) return lb;
+  if (lb === undefined) return rr;
+  return Math.min(rr, lb);
+}
+
+// Blend of every available rating source on a 0-10 scale; unknown => neutral 5.
+function blendedScore(title: CineTitle) {
+  const parts: number[] = [];
+  if (title.imdbRating) parts.push(title.imdbRating);
+  if (title.tmdbRating) parts.push(title.tmdbRating);
+  if (title.rtTomatometer != null) parts.push(title.rtTomatometer / 10);
+  if (title.metascore != null) parts.push(title.metascore / 10);
+  if (!parts.length) return 5;
+  return parts.reduce((sum, value) => sum + value, 0) / parts.length;
+}
+
+// Small deterministic jitter so "Otra ruleta" reshuffles among good candidates without a full re-render randomness.
+function seededJitter(id: string, seed: number) {
+  let hash = seed * 2654435761;
+  for (let index = 0; index < id.length; index += 1) {
+    hash = (hash ^ id.charCodeAt(index)) * 16777619;
+  }
+  const normalized = ((hash >>> 0) % 1000) / 1000;
+  return normalized * 0.9;
+}
+
+function formatMinScore(filters: Filters) {
+  if (!filters.minScore) return "Cualquiera";
+  return ratingSources[filters.ratingSource].unit === "percent"
+    ? `${filters.minScore * 10}%`
+    : `${filters.minScore}`;
 }
 
 function topScore(titles: CineTitle[], profile: ProfileKey) {

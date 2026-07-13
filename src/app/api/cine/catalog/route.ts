@@ -16,10 +16,13 @@ type DbTitle = {
   genres: string[] | null;
   tmdb_vote: number | null;
   tmdb_popularity: number | null;
+  imdb_id: string | null;
   imdb_rating: number | null;
   imdb_votes: number | null;
+  metascore: number | null;
   rt_tomatometer: number | null;
-  rt_popcornmeter: number | null;
+  runtime_minutes: number | null;
+  ratings_updated_at: string | null;
   search_titles: string[] | null;
 };
 
@@ -37,15 +40,6 @@ type DbState = {
   cine_profiles?: { initials: ProfileKey } | null;
 };
 
-type LegacyMark = {
-  tmdb_id: number;
-  media_type: MediaKind;
-  status: WatchStatus;
-  rating: number | null;
-  watched_at: string | null;
-  cine_profiles?: { initials: ProfileKey } | null;
-};
-
 type DbPending = {
   title_id: string;
   cine_pending_categories?: { name: PendingCategory } | null;
@@ -55,23 +49,24 @@ type DbPending = {
 export const dynamic = "force-dynamic";
 
 const pageSize = 1000;
-const titleSelect = "id, tmdb_id, media_type, title, original_title, overview, poster_path, backdrop_path, release_year, runtime_label, genres, tmdb_vote, tmdb_popularity, imdb_rating, imdb_votes, rt_tomatometer, rt_popcornmeter, search_titles";
+const titleSelect = "id, tmdb_id, media_type, title, original_title, overview, poster_path, backdrop_path, release_year, runtime_label, genres, tmdb_vote, tmdb_popularity, imdb_id, imdb_rating, imdb_votes, metascore, rt_tomatometer, runtime_minutes, ratings_updated_at, search_titles";
 
 export async function GET(request: Request) {
   const auth = await requireCineProfile(request);
   if ("error" in auth) return auth.error;
 
   try {
-    const [titles, availability, states, legacyMarks, pending] = await Promise.all([
+    // Legacy cine_user_marks are copied into cine_user_title_states by the sync
+    // (migrateLegacyMarks), so the catalog no longer reads that table on every load.
+    const [titles, availability, states, pending] = await Promise.all([
       fetchAll<DbTitle>(() => auth.supabase.from("cine_titles").select(titleSelect).order("tmdb_popularity", { ascending: false })),
       fetchAll<DbAvailability>(() => auth.supabase.from("cine_availability").select("title_id, provider_key, monetization").eq("region", "ES")),
       fetchAll<DbState>(() => auth.supabase.from("cine_user_title_states").select("title_id, status, rating, watched_at, cine_profiles(initials)")),
-      fetchAll<LegacyMark>(() => auth.supabase.from("cine_user_marks").select("tmdb_id, media_type, status, rating, watched_at, cine_profiles(initials)")),
       fetchAll<DbPending>(() => auth.supabase.from("cine_pending_items").select("title_id, cine_pending_categories(name), cine_profiles(initials)")),
     ]);
 
     return NextResponse.json({
-      titles: mapTitles(titles, availability, states, legacyMarks, pending),
+      titles: mapTitles(titles, availability, states, pending),
       attribution: "Source: TMDB. Streaming availability data is powered by TMDB/JustWatch.",
     });
   } catch (error) {
@@ -82,6 +77,7 @@ export async function GET(request: Request) {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Supabase query builder type is not worth threading through here.
 async function fetchAll<T>(createQuery: () => any): Promise<T[]> {
   const rows: T[] = [];
   for (let from = 0; ; from += pageSize) {
@@ -97,17 +93,14 @@ function mapTitles(
   titles: DbTitle[],
   availability: DbAvailability[],
   states: DbState[],
-  legacyMarks: LegacyMark[],
   pending: DbPending[]
 ): CineTitle[] {
   const availabilityByTitle = groupBy(availability, (item) => item.title_id);
   const statesByTitle = groupBy(states, (item) => item.title_id);
   const pendingByTitle = groupBy(pending, (item) => item.title_id);
-  const legacyByTmdb = groupBy(legacyMarks, (item) => `${item.media_type}-${item.tmdb_id}`);
 
   return titles.map((title) => {
     const titleStates = statesByTitle.get(title.id) ?? [];
-    const legacyStates = legacyByTmdb.get(`${title.media_type}-${title.tmdb_id}`) ?? [];
     const pendingItems = pendingByTitle.get(title.id) ?? [];
 
     return {
@@ -123,10 +116,14 @@ function mapTitles(
       posterPath: title.poster_path,
       backdropPath: title.backdrop_path ?? "",
       overview: cleanText(title.overview ?? ""),
-      imdbRating: Number(title.imdb_rating ?? title.tmdb_vote ?? 0) || undefined,
+      runtimeMinutes: title.runtime_minutes ?? undefined,
+      imdbId: title.imdb_id ?? undefined,
+      tmdbRating: Number(title.tmdb_vote ?? 0) || undefined,
+      imdbRating: Number(title.imdb_rating ?? 0) || undefined,
       imdbVotes: title.imdb_votes ?? undefined,
+      metascore: title.metascore ?? undefined,
       rtTomatometer: title.rt_tomatometer ?? undefined,
-      rtPopcornmeter: title.rt_popcornmeter ?? undefined,
+      ratingsUpdatedAt: title.ratings_updated_at ?? undefined,
       tmdbPopularity: Number(title.tmdb_popularity ?? 0),
       availability: (availabilityByTitle.get(title.id) ?? []).map((item) => ({
         provider: item.provider_key,
@@ -137,17 +134,15 @@ function mapTitles(
       ),
       addedBy: pendingItems.find((item) => item.cine_profiles?.initials)?.cine_profiles?.initials,
       personal: {
-        RR: resolvePersonalState(titleStates, legacyStates, "RR"),
-        LB: resolvePersonalState(titleStates, legacyStates, "LB"),
+        RR: resolvePersonalState(titleStates, "RR"),
+        LB: resolvePersonalState(titleStates, "LB"),
       },
     };
   });
 }
 
-function resolvePersonalState(states: DbState[], legacyMarks: LegacyMark[], profile: ProfileKey) {
-  const state = states.find((item) => item.cine_profiles?.initials === profile);
-  const legacy = legacyMarks.find((item) => item.cine_profiles?.initials === profile);
-  const source = state ?? legacy;
+function resolvePersonalState(states: DbState[], profile: ProfileKey) {
+  const source = states.find((item) => item.cine_profiles?.initials === profile);
   return {
     status: source?.status ?? "none",
     rating: source?.rating ?? undefined,
