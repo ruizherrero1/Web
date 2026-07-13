@@ -272,6 +272,9 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
             />
           )}
           {activeTab === "ratings" && <RatingsView titles={titles} />}
+          <p className="mt-6 text-center text-[10px] leading-4 text-[var(--muted)]">
+            Datos e imagenes de TMDB. Disponibilidad de streaming via TMDB/JustWatch.
+          </p>
         </section>
 
         <nav className="fixed bottom-0 left-1/2 z-30 w-full max-w-[520px] -translate-x-1/2 border-t border-white/10 bg-[rgba(10,8,9,0.92)] px-3 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-2 backdrop-blur-xl">
@@ -946,4 +949,5 @@ function topScore(titles: CineTitle[], profile: ProfileKey) {
   if (!title) return "-";
   return `${title.personal[profile].rating}/10`;
 }
+
 
