@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import type { ProviderKey } from "@/app/apps/cine/_lib/types";
 
@@ -15,6 +16,28 @@ export const providerTmdbIds: Record<ProviderKey, number> = {
   disney: 337,
 };
 
+
+export function getCineAccessCookie() {
+  return "cine_access";
+}
+
+export function makeCineAccessCookie(password: string) {
+  const secret = process.env.CINE_COOKIE_SECRET ?? password;
+  return createHash("sha256").update(`${password}:${secret}`).digest("hex");
+}
+
+export function hasCineAccess(request: Request) {
+  const password = process.env.CINE_SHARED_PASSWORD;
+  if (!password) return false;
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const cookies = Object.fromEntries(
+    cookieHeader
+      .split(";")
+      .map((part) => part.trim().split("="))
+      .filter((parts): parts is [string, string] => parts.length === 2)
+  );
+  return cookies[getCineAccessCookie()] === makeCineAccessCookie(password);
+}
 export const providerNames: Record<ProviderKey, string> = {
   netflix: "Netflix",
   prime: "Prime Video",
@@ -47,6 +70,10 @@ export function getSupabaseForToken(token: string) {
 }
 
 export async function requireCineProfile(request: Request) {
+  if (!hasCineAccess(request)) {
+    return { error: Response.json({ error: "Cine password required" }, { status: 401 }) };
+  }
+
   const token = getRequestToken(request);
   if (!token) {
     return { error: Response.json({ error: "Unauthorized" }, { status: 401 }) };
@@ -105,4 +132,3 @@ export function appendQuery(url: string, query: string) {
   if (!query) return url;
   return `${url}${url.includes("?") ? "&" : "?"}${query}`;
 }
-
