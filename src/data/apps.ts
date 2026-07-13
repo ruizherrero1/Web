@@ -57,6 +57,16 @@ export const apps = [
     focus: "Viajes",
   },
   {
+    name: "Cine",
+    slug: "cine",
+    description:
+      "PWA privada para elegir, guardar y valorar peliculas y series en pareja.",
+    status: "En desarrollo",
+    access: "Invitación",
+    href: "/apps/cine",
+    focus: "Cine y series",
+  },
+  {
     name: "FinanceLab",
     slug: "financelab",
     description:
@@ -77,3 +87,5 @@ export const apps = [
     focus: "Fútbol",
   },
 ] as const satisfies readonly AppItem[];
+
+

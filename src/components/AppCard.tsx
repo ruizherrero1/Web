@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { AppItem } from "@/data/apps";
 import { Badge } from "@/components/Badge";
-import { Dumbbell, ChefHat, Plane, BarChart2, Trophy } from "lucide-react";
+import { BarChart2, ChefHat, Clapperboard, Dumbbell, Plane, Trophy } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 const appIcons: Record<string, LucideIcon> = {
@@ -9,6 +9,7 @@ const appIcons: Record<string, LucideIcon> = {
   fantasy: Trophy,
   recetas: ChefHat,
   travelkit: Plane,
+  cine: Clapperboard,
   financelab: BarChart2,
 };
 
@@ -53,3 +54,4 @@ export function AppCard({
     </article>
   );
 }
+
