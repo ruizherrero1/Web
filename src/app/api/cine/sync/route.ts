@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireCineProfile } from "../_lib";
+import { fetchRottenTomatoesScores, hasRottenTomatoesEnv } from "../_ratings";
 import { loadTmdbCatalogForSync, type TmdbCatalogTitle } from "../_tmdb";
 
 export const dynamic = "force-dynamic";
@@ -85,6 +86,46 @@ async function replaceAvailability(
   }
 }
 
+async function syncRottenTomatoesRatings(supabase: SupabaseClient) {
+  const configuredLimit = Number(process.env.CINE_RT_SYNC_LIMIT ?? 25);
+  const limit = Number.isFinite(configuredLimit) ? Math.min(Math.max(configuredLimit, 0), 100) : 25;
+  if (!hasRottenTomatoesEnv() || limit === 0) return { attempted: 0, updated: 0, skipped: true };
+
+  const { data: titles, error } = await supabase
+    .from("cine_titles")
+    .select("id, title, original_title")
+    .or("rt_tomatometer.is.null,rt_popcornmeter.is.null")
+    .order("tmdb_popularity", { ascending: false })
+    .limit(limit);
+
+  if (error) throw error;
+
+  let attempted = 0;
+  let updated = 0;
+  for (const title of (titles ?? []) as Array<{ id: string; title: string; original_title: string | null }>) {
+    const query = title.original_title || title.title;
+    attempted += 1;
+    try {
+      const scores = await fetchRottenTomatoesScores(query);
+      if (scores.tomatometer === null && scores.popcornmeter === null) continue;
+
+      const { error: updateError } = await supabase
+        .from("cine_titles")
+        .update({
+          rt_tomatometer: scores.tomatometer,
+          rt_popcornmeter: scores.popcornmeter,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", title.id);
+      if (updateError) throw updateError;
+      updated += 1;
+    } catch {
+      // RapidAPI quotas and individual title misses should not block the catalog sync.
+    }
+  }
+
+  return { attempted, updated, skipped: false };
+}
 async function migrateLegacyMarks(supabase: SupabaseClient) {
   const { data: marks, error: marksError } = await supabase
     .from("cine_user_marks")

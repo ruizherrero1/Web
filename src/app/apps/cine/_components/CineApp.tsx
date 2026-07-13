@@ -159,7 +159,9 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "No se pudo actualizar el catalogo.");
-      setSyncMessage(`Catalogo actualizado: ${payload.titles ?? 0} titulos importados.`);
+      const rt = payload.rottenTomatoes;
+      const rtText = rt && !rt.skipped ? ` RT: ${rt.updated ?? 0}/${rt.attempted ?? 0}.` : "";
+      setSyncMessage(`Catalogo actualizado: ${payload.titles ?? 0} titulos importados.${rtText}`);
       await loadCatalog();
     } catch (error) {
       setCatalogError(error instanceof Error ? error.message : "No se pudo actualizar el catalogo.");
@@ -652,7 +654,7 @@ function HeroTitle({
           </div>
           <h2 className="text-3xl font-semibold leading-tight">{title.title}</h2>
           <p className="mt-1 text-sm text-[var(--text-soft)]">
-            {title.year} ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {title.runtimeLabel} ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {title.genres.slice(0, 2).join(" / ")}
+            {title.year} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {title.runtimeLabel} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {title.genres.slice(0, 2).join(" / ")}
           </p>
           <p className="mt-3 line-clamp-3 text-sm leading-6 text-[var(--text-soft)]">{title.overview}</p>
         </div>
@@ -713,7 +715,7 @@ function TitleCard({
             <div className="min-w-0">
               <h3 className="truncate text-lg font-semibold">{title.title}</h3>
               <p className="truncate text-sm text-[var(--muted)]">
-                {title.year} ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {title.runtimeLabel}
+                {title.year} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {title.runtimeLabel}
               </p>
             </div>
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-black/35 text-sm font-bold">
