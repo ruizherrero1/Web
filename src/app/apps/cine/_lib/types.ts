@@ -77,6 +77,7 @@ export type CineTitle = {
   tmdbPopularity: number;
   rtTomatometer?: number;
   ratingsUpdatedAt?: string;
+  addedAt?: string;
   availability: Availability[];
   pendingCategories: PendingCategory[];
   addedBy?: ProfileKey;

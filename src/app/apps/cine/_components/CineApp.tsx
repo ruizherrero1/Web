@@ -8,6 +8,7 @@ import {
   Dices,
   ExternalLink,
   Film,
+  Flame,
   Home,
   Info,
   Play,
@@ -115,6 +116,7 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
   const [selectedTitleId, setSelectedTitleId] = useState<string>(demoTitles[0]?.id ?? "");
   const [detailTitle, setDetailTitle] = useState<CineTitle | null>(null);
   const [ratingFor, setRatingFor] = useState<CineTitle | null>(null);
+  const [trendingKeys, setTrendingKeys] = useState<string[]>([]);
   const [online, setOnline] = useState(true);
   const [pendingWrites, setPendingWrites] = useState(0);
 
@@ -142,6 +144,20 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
     // Load the real catalog once the access token is available (fetch-on-mount).
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void loadCatalog();
+  }, [accessToken]);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    void (async () => {
+      try {
+        const response = await fetch("/api/cine/trending", { headers: { Authorization: `Bearer ${accessToken}` } });
+        if (!response.ok) return;
+        const payload = await response.json();
+        setTrendingKeys((payload.keys ?? []) as string[]);
+      } catch {
+        // Trending is a nice-to-have shelf; ignore failures.
+      }
+    })();
   }, [accessToken]);
 
   useEffect(() => {
@@ -414,6 +430,7 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
               titles={titles}
               selectedTitle={selectedTitle}
               bestShared={bestShared}
+              trendingKeys={trendingKeys}
               setSelectedTitleId={setSelectedTitleId}
               setActiveTab={setActiveTab}
               markWatched={markWatched}
@@ -612,6 +629,7 @@ function HomeView({
   titles,
   selectedTitle,
   bestShared,
+  trendingKeys,
   setSelectedTitleId,
   setActiveTab,
   markWatched,
@@ -623,6 +641,7 @@ function HomeView({
   titles: CineTitle[];
   selectedTitle: CineTitle;
   bestShared: Array<{ title: CineTitle; average: number }>;
+  trendingKeys: string[];
   setSelectedTitleId: (id: string) => void;
   setActiveTab: (tab: TabKey) => void;
   markWatched: (titleId: string, scope: "me" | "both") => void;
@@ -631,9 +650,49 @@ function HomeView({
   openDetail: (title: CineTitle) => void;
   openRating: (title: CineTitle) => void;
 }) {
-  const unwatchedTogether = titles.filter(
-    (title) => title.personal.RR.status !== "watched" && title.personal.LB.status !== "watched"
-  );
+  const shelves = useMemo(() => {
+    const unwatchedTogether = titles.filter(
+      (title) => title.personal.RR.status !== "watched" && title.personal.LB.status !== "watched"
+    );
+
+    const bestImdb = [...titles]
+      .filter((title) => title.imdbRating)
+      .sort((a, b) => (b.imdbRating ?? 0) - (a.imdbRating ?? 0))
+      .slice(0, 20);
+
+    const trendingOrder = new Map(trendingKeys.map((key, index) => [key, index]));
+    const trending = titles
+      .filter((title) => trendingOrder.has(`${title.kind}-${title.tmdbId}`))
+      .sort((a, b) => (trendingOrder.get(`${a.kind}-${a.tmdbId}`) ?? 0) - (trendingOrder.get(`${b.kind}-${b.tmdbId}`) ?? 0));
+
+    const novedades = [...titles]
+      .filter((title) => title.addedAt)
+      .sort((a, b) => (b.addedAt ?? "").localeCompare(a.addedAt ?? ""))
+      .slice(0, 20);
+
+    const byProvider = providers
+      .map((provider) => ({
+        provider,
+        titles: [...titles]
+          .filter((title) => title.availability.some((item) => item.provider === provider.key))
+          .sort((a, b) => b.tmdbPopularity - a.tmdbPopularity)
+          .slice(0, 20),
+      }))
+      .filter((shelf) => shelf.titles.length > 0);
+
+    const genreCounts = new Map<string, number>();
+    for (const title of titles) for (const g of title.genres) genreCounts.set(g, (genreCounts.get(g) ?? 0) + 1);
+    const topGenres = [...genreCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([g]) => g);
+    const byGenre = topGenres.map((genre) => ({
+      genre,
+      titles: [...titles]
+        .filter((title) => title.genres.includes(genre))
+        .sort((a, b) => (b.imdbRating ?? b.tmdbRating ?? 0) - (a.imdbRating ?? a.tmdbRating ?? 0))
+        .slice(0, 20),
+    }));
+
+    return { unwatchedTogether, bestImdb, trending, novedades, byProvider, byGenre };
+  }, [titles, trendingKeys]);
 
   return (
     <div className="space-y-5">
@@ -646,40 +705,54 @@ function HomeView({
         openRating={openRating}
       />
 
-      <div className="grid grid-cols-3 gap-2">
-        <Metric icon={BookmarkPlus} label="Pendientes" value={unwatchedTogether.length.toString()} />
-        <Metric icon={Users} label="Vistas juntos" value={bestShared.length.toString()} />
-        <Metric icon={Trophy} label="Top media" value={bestShared[0] ? bestShared[0].average.toFixed(1) : "-"} />
-      </div>
+      {shelves.unwatchedTogether.length > 0 && (
+        <>
+          <SectionHeader icon={Sparkles} title="Para decidir hoy" action="Buscar" onAction={() => setActiveTab("explore")} />
+          <HorizontalShelf titles={shelves.unwatchedTogether} setSelectedTitleId={setSelectedTitleId} />
+        </>
+      )}
 
-      <SectionHeader
-        icon={Sparkles}
-        title="Para decidir hoy"
-        action="Buscar"
-        onAction={() => setActiveTab("explore")}
-      />
-      <HorizontalShelf titles={unwatchedTogether} setSelectedTitleId={setSelectedTitleId} />
+      {shelves.trending.length > 0 && (
+        <>
+          <SectionHeader icon={Flame} title="Tendencia esta semana" />
+          <HorizontalShelf titles={shelves.trending} setSelectedTitleId={setSelectedTitleId} />
+        </>
+      )}
 
-      <SectionHeader icon={Trophy} title="Mejor valoradas por vosotros" />
-      <div className="space-y-2">
-        {bestShared.slice(0, 4).map(({ title, average }) => (
-          <button
-            key={title.id}
-            type="button"
-            onClick={() => setSelectedTitleId(title.id)}
-            className="flex w-full items-center gap-3 rounded-xl border border-white/8 bg-white/6 p-3 text-left"
-          >
-            <Poster title={title} size="small" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-semibold">{title.title}</p>
-              <p className="truncate text-sm text-[var(--muted)]">{title.genres.join(" / ")}</p>
-            </div>
-            <div className="grid h-11 w-11 place-items-center rounded-full bg-[var(--gold)] text-sm font-black text-black">
-              {average.toFixed(1)}
-            </div>
-          </button>
-        ))}
-      </div>
+      {shelves.bestImdb.length > 0 && (
+        <>
+          <SectionHeader icon={Trophy} title="Mejores IMDb disponibles" />
+          <HorizontalShelf titles={shelves.bestImdb} setSelectedTitleId={setSelectedTitleId} />
+        </>
+      )}
+
+      {shelves.novedades.length > 0 && (
+        <>
+          <SectionHeader icon={Sparkles} title="Novedades en el catalogo" />
+          <HorizontalShelf titles={shelves.novedades} setSelectedTitleId={setSelectedTitleId} />
+        </>
+      )}
+
+      {bestShared.length > 0 && (
+        <>
+          <SectionHeader icon={Users} title="Mejor valoradas por vosotros" action="Notas" onAction={() => setActiveTab("ratings")} />
+          <HorizontalShelf titles={bestShared.map((item) => item.title)} setSelectedTitleId={setSelectedTitleId} />
+        </>
+      )}
+
+      {shelves.byProvider.map(({ provider, titles: providerTitles }) => (
+        <div key={provider.key}>
+          <SectionHeader icon={Ticket} title={provider.name} />
+          <HorizontalShelf titles={providerTitles} setSelectedTitleId={setSelectedTitleId} />
+        </div>
+      ))}
+
+      {shelves.byGenre.map(({ genre, titles: genreTitles }) => (
+        <div key={genre}>
+          <SectionHeader icon={Film} title={genre} />
+          <HorizontalShelf titles={genreTitles} setSelectedTitleId={setSelectedTitleId} />
+        </div>
+      ))}
     </div>
   );
 }
