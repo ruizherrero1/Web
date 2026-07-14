@@ -12,6 +12,7 @@ import {
   Home,
   Info,
   LogOut,
+  Palette,
   Play,
   RefreshCw,
   Search,
@@ -74,6 +75,31 @@ const ratingSources: Record<RatingSource, { label: string; unit: "ten" | "percen
 const rottenTomatoesSearch = (title: CineTitle) =>
   `https://www.rottentomatoes.com/search?search=${encodeURIComponent(title.title)}`;
 
+const metacriticSearch = (title: CineTitle) =>
+  `https://www.metacritic.com/search/${encodeURIComponent(title.title)}/`;
+
+type CineThemeKey = "classic" | "ocean" | "emerald" | "violet" | "sunset";
+
+const cineThemes: Array<{ key: CineThemeKey; label: string; accent: string; deep: string }> = [
+  { key: "classic", label: "Clasico", accent: "#f4ba55", deep: "#9e1b32" },
+  { key: "ocean", label: "Oceano", accent: "#5bc9f0", deep: "#155a8a" },
+  { key: "emerald", label: "Esmeralda", accent: "#46d99e", deep: "#0f5f49" },
+  { key: "violet", label: "Purpura", accent: "#b992f5", deep: "#5b21b6" },
+  { key: "sunset", label: "Atardecer", accent: "#fb9a4b", deep: "#c22a4f" },
+];
+
+// CineApp only mounts on the client (after login), so reading localStorage in a
+// lazy initializer is safe — there is no SSR render of this subtree to mismatch.
+function loadStoredTheme(): CineThemeKey {
+  if (typeof window === "undefined") return "classic";
+  try {
+    const stored = window.localStorage.getItem("cine-theme");
+    return cineThemes.some((theme) => theme.key === stored) ? (stored as CineThemeKey) : "classic";
+  } catch {
+    return "classic";
+  }
+}
+
 const watchFilterLabels: Record<WatchFilter, string> = {
   all: "Todas",
   unseen_together: "Sin ver juntos",
@@ -122,6 +148,17 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
   const [pendingWrites, setPendingWrites] = useState(0);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [newSinceVisit, setNewSinceVisit] = useState(0);
+  const [theme, setTheme] = useState<CineThemeKey>(loadStoredTheme);
+  const [themePickerOpen, setThemePickerOpen] = useState(false);
+
+  const applyTheme = (next: CineThemeKey) => {
+    setTheme(next);
+    try {
+      window.localStorage.setItem("cine-theme", next);
+    } catch {
+      // localStorage unavailable: theme just won't persist.
+    }
+  };
 
   const loadCatalog = async () => {
     if (!accessToken) return;
@@ -423,12 +460,12 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
   };
 
   return (
-    <main className="cine-app-shell min-h-screen bg-[var(--page-bg)] text-[var(--text-main)]">
+    <main className="cine-app-shell min-h-screen bg-[var(--page-bg)] text-[var(--text-main)]" data-cine-theme={theme}>
       <div className="mx-auto flex min-h-screen w-full max-w-[520px] flex-col border-x border-white/8 bg-[var(--app-bg)] shadow-2xl shadow-black/40">
         <header className="sticky top-0 z-20 border-b border-white/10 bg-[rgba(10,8,9,0.88)] px-4 pb-3 pt-4 backdrop-blur-xl">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[linear-gradient(145deg,#f5b84b,#9e1b32)] text-black">
+              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[linear-gradient(145deg,var(--gold),var(--wine))] text-black">
                 <Clapperboard size={22} strokeWidth={2.4} />
               </div>
               <div className="min-w-0">
@@ -546,7 +583,17 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
             <PendingView titles={pendingTitles} openDetail={setDetailTitle} updatePendingCategory={updatePendingCategory} />
           )}
           {activeTab === "ratings" && <RatingsView titles={titles} />}
-          <p className="mt-6 text-center text-[10px] leading-4 text-[var(--muted)]">
+          <div className="mt-6 flex justify-center">
+            <button
+              type="button"
+              onClick={() => setThemePickerOpen(true)}
+              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/6 px-3 py-1.5 text-xs font-semibold text-[var(--text-soft)] transition hover:bg-white/12"
+            >
+              <Palette size={14} className="text-[var(--gold)]" />
+              Tema: {cineThemes.find((item) => item.key === theme)?.label ?? "Clasico"}
+            </button>
+          </div>
+          <p className="mt-3 text-center text-[10px] leading-4 text-[var(--muted)]">
             Datos e imagenes de TMDB. Disponibilidad de streaming via TMDB/JustWatch.
           </p>
         </section>
@@ -599,6 +646,38 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
           updatePendingCategory={updatePendingCategory}
           updateProgress={updateProgress}
         />
+      )}
+      {themePickerOpen && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center">
+          <button type="button" aria-label="Cerrar" onClick={() => setThemePickerOpen(false)} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+          <div className="relative z-10 w-full max-w-[420px] rounded-t-3xl border border-white/10 bg-[var(--app-bg)] p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] shadow-2xl shadow-black/60 sm:rounded-3xl">
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-lg font-semibold">Tema de color</p>
+              <button type="button" onClick={() => setThemePickerOpen(false)} className="grid h-9 w-9 place-items-center rounded-full bg-white/8 text-[var(--text-soft)]" aria-label="Cerrar">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="space-y-2">
+              {cineThemes.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => { applyTheme(item.key); setThemePickerOpen(false); }}
+                  className={`flex w-full items-center gap-3 rounded-xl border p-3 text-left transition ${
+                    theme === item.key ? "border-[var(--gold)] bg-white/10" : "border-white/10 bg-white/5 hover:bg-white/10"
+                  }`}
+                >
+                  <span
+                    className="h-9 w-9 shrink-0 rounded-full border border-white/20"
+                    style={{ background: `linear-gradient(145deg, ${item.accent}, ${item.deep})` }}
+                  />
+                  <span className="flex-1 font-semibold">{item.label}</span>
+                  {theme === item.key && <Check size={18} className="text-[var(--gold)]" />}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
       {ratingFor && (
         <RatingModal
@@ -1805,7 +1884,22 @@ function RatingStrip({ title }: { title: CineTitle }) {
     <div className="grid grid-cols-4 gap-2">
       <Metric label="TMDB" value={title.tmdbRating?.toFixed(1) ?? "-"} />
       <Metric label="IMDb" value={title.imdbRating?.toFixed(1) ?? "-"} />
-      <Metric label="Metacritic" value={title.metascore != null ? `${title.metascore}` : "-"} />
+      {title.metascore != null ? (
+        <Metric label="Metacritic" value={`${title.metascore}`} />
+      ) : (
+        // OMDb no da Metascore para series (ni para titulos aun no enriquecidos):
+        // en ese caso la casilla enlaza a la busqueda en metacritic.com.
+        <a
+          href={metacriticSearch(title)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex min-h-20 flex-col items-center justify-center rounded-xl border border-white/8 bg-white/6 p-3 transition hover:bg-white/12"
+          aria-label="Buscar en Metacritic"
+        >
+          <span className="grid h-7 w-7 place-items-center rounded-md bg-[#ffcc34] text-sm font-black text-black">m</span>
+          <span className="mt-1 text-[10px] text-[var(--muted)]">Metacritic</span>
+        </a>
+      )}
       <a
         href={rottenTomatoesSearch(title)}
         target="_blank"

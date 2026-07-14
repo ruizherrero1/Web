@@ -1,7 +1,9 @@
 import { ImageResponse } from "next/og";
 
-// Icono de la app Cine (claqueta) usado como apple-touch-icon en iOS y como
-// icono del manifest. Sirve en /apps/cine/apple-icon y solo aplica a Cine.
+// Icono de la app Cine (claqueta) para "Anadir a pantalla de inicio" y el
+// manifest. Construido con divs (rects/skew) en lugar de paths SVG porque el
+// renderizador de ImageResponse (satori) dibuja mal los paths con stroke y el
+// icono anterior salia deformado.
 export const size = { width: 512, height: 512 };
 export const contentType = "image/png";
 
@@ -15,21 +17,44 @@ export default function Icon() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "linear-gradient(145deg, #f5b84b, #9e1b32)",
+          background: "linear-gradient(160deg, #f6bd57 0%, #a71f36 100%)",
         }}
       >
-        <svg width="300" height="300" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path
-            d="M20.2 6 3 10.6M16.4 3 8 5.2m8.4-2.2-3 5.2m3-5.2 2.5 4.4c.3.5.1 1.1-.4 1.3L4 12.4"
-            stroke="#0a0809"
-            strokeWidth="1.6"
-            strokeLinejoin="round"
+        <div style={{ display: "flex", flexDirection: "column", width: 330 }}>
+          <div
+            style={{
+              display: "flex",
+              height: 78,
+              borderRadius: "18px 18px 4px 4px",
+              overflow: "hidden",
+              transform: "rotate(-8deg)",
+              transformOrigin: "bottom left",
+              backgroundColor: "#170a0d",
+            }}
+          >
+            {[0, 1, 2, 3].map((stripe) => (
+              <div
+                key={stripe}
+                style={{
+                  width: 50,
+                  height: 120,
+                  backgroundColor: "#f7ecd9",
+                  transform: "skewX(-24deg)",
+                  marginLeft: stripe === 0 ? 30 : 34,
+                }}
+              />
+            ))}
+          </div>
+          <div
+            style={{
+              display: "flex",
+              height: 150,
+              marginTop: 8,
+              borderRadius: "6px 6px 22px 22px",
+              backgroundColor: "#170a0d",
+            }}
           />
-          <path
-            d="M4 8v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8H4Z"
-            fill="#0a0809"
-          />
-        </svg>
+        </div>
       </div>
     ),
     { ...size }
