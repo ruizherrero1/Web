@@ -237,13 +237,6 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
   }, [filters, titles, activeProfile]);
 
   const pendingTitles = titles.filter((title) => title.pendingCategories.length > 0);
-  const watchedTogether = titles.filter(
-    (title) => title.personal.RR.status === "watched" && title.personal.LB.status === "watched"
-  );
-  const bestShared = watchedTogether
-    .map((title) => ({ title, average: coupleRating(title) ?? 0 }))
-    .filter((item) => item.average > 0)
-    .sort((left, right) => right.average - left.average);
 
   const persistState = async (
     title: CineTitle,
@@ -372,6 +365,12 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
 
     void persistState(currentTitle, { status: nextStatus, scope });
 
+    // Close the loop: right after marking something watched, ask for the rating
+    // (only if the active user hasn't rated it yet).
+    if (nextStatus === "watched" && !currentTitle.personal[activeProfile].rating) {
+      setRatingFor(currentTitle);
+    }
+
     setTitles((current) =>
       current.map((title) => {
         if (title.id !== titleId) return title;
@@ -436,8 +435,20 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
                 <h1 className="truncate text-2xl font-semibold leading-tight">Cine</h1>
               </div>
             </div>
-            <div className="flex rounded-full border border-white/10 bg-white/6 p-1">
-              <button type="button" onClick={syncCatalog} disabled={syncLoading} className="h-9 w-9 rounded-full text-[var(--text-soft)] transition hover:bg-white/10 disabled:opacity-50" aria-label="Actualizar catalogo">
+            <div className="flex items-center rounded-full border border-white/10 bg-white/6 p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab("explore");
+                  // Focus the search field once the tab has rendered.
+                  setTimeout(() => document.getElementById("cine-search-input")?.focus(), 60);
+                }}
+                className="grid h-9 w-9 place-items-center rounded-full text-[var(--text-soft)] transition hover:bg-white/10"
+                aria-label="Buscar"
+              >
+                <Search size={17} />
+              </button>
+              <button type="button" onClick={syncCatalog} disabled={syncLoading} className="grid h-9 w-9 place-items-center rounded-full text-[var(--text-soft)] transition hover:bg-white/10 disabled:opacity-50" aria-label="Actualizar catalogo">
                 <RefreshCw size={17} className={syncLoading ? "animate-spin" : ""} />
               </button>
               {profiles.map((profile) => (
@@ -494,7 +505,6 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
             <HomeView
               titles={titles}
               selectedTitle={selectedTitle}
-              bestShared={bestShared}
               trendingKeys={trendingKeys}
               setSelectedTitleId={setSelectedTitleId}
               setActiveTab={setActiveTab}
@@ -684,7 +694,6 @@ function NotaButton({
 function HomeView({
   titles,
   selectedTitle,
-  bestShared,
   trendingKeys,
   setSelectedTitleId,
   setActiveTab,
@@ -696,7 +705,6 @@ function HomeView({
 }: {
   titles: CineTitle[];
   selectedTitle: CineTitle;
-  bestShared: Array<{ title: CineTitle; average: number }>;
   trendingKeys: string[];
   setSelectedTitleId: (id: string) => void;
   setActiveTab: (tab: TabKey) => void;
@@ -706,9 +714,21 @@ function HomeView({
   openDetail: (title: CineTitle) => void;
   openRating: (title: CineTitle) => void;
 }) {
+  // A deliberately short Home: decide fast, rate what you watched. Platform and
+  // genre browsing lives in Buscar's filters, not here.
   const shelves = useMemo(() => {
     const unwatchedTogether = titles.filter(
       (title) => title.personal.RR.status !== "watched" && title.personal.LB.status !== "watched"
+    );
+
+    const toRate = titles
+      .filter((title) => title.personal[activeProfile].status === "watched" && !title.personal[activeProfile].rating)
+      .sort((a, b) => (b.personal[activeProfile].watchedAt ?? "").localeCompare(a.personal[activeProfile].watchedAt ?? ""));
+
+    const paraVerJuntos = titles.filter(
+      (title) =>
+        title.pendingCategories.includes("Para ver juntos") &&
+        (title.personal.RR.status !== "watched" || title.personal.LB.status !== "watched")
     );
 
     const bestImdb = [...titles]
@@ -721,34 +741,8 @@ function HomeView({
       .filter((title) => trendingOrder.has(`${title.kind}-${title.tmdbId}`))
       .sort((a, b) => (trendingOrder.get(`${a.kind}-${a.tmdbId}`) ?? 0) - (trendingOrder.get(`${b.kind}-${b.tmdbId}`) ?? 0));
 
-    const novedades = [...titles]
-      .filter((title) => title.addedAt)
-      .sort((a, b) => (b.addedAt ?? "").localeCompare(a.addedAt ?? ""))
-      .slice(0, 20);
-
-    const byProvider = providers
-      .map((provider) => ({
-        provider,
-        titles: [...titles]
-          .filter((title) => title.availability.some((item) => item.provider === provider.key))
-          .sort((a, b) => b.tmdbPopularity - a.tmdbPopularity)
-          .slice(0, 20),
-      }))
-      .filter((shelf) => shelf.titles.length > 0);
-
-    const genreCounts = new Map<string, number>();
-    for (const title of titles) for (const g of title.genres) genreCounts.set(g, (genreCounts.get(g) ?? 0) + 1);
-    const topGenres = [...genreCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([g]) => g);
-    const byGenre = topGenres.map((genre) => ({
-      genre,
-      titles: [...titles]
-        .filter((title) => title.genres.includes(genre))
-        .sort((a, b) => (b.imdbRating ?? b.tmdbRating ?? 0) - (a.imdbRating ?? a.tmdbRating ?? 0))
-        .slice(0, 20),
-    }));
-
-    return { unwatchedTogether, bestImdb, trending, novedades, byProvider, byGenre };
-  }, [titles, trendingKeys]);
+    return { unwatchedTogether, toRate, paraVerJuntos, bestImdb, trending };
+  }, [titles, trendingKeys, activeProfile]);
 
   // Tapping a shelf poster opens the full detail sheet (and syncs the hero behind it).
   const openShelfTitle = (title: CineTitle) => {
@@ -758,6 +752,13 @@ function HomeView({
 
   return (
     <div className="space-y-5">
+      {shelves.toRate.length > 0 && (
+        <>
+          <SectionHeader icon={Star} title={`Vistas sin puntuar (${activeProfile})`} />
+          <HorizontalShelf titles={shelves.toRate} onSelect={openRating} />
+        </>
+      )}
+
       <HeroTitle
         title={selectedTitle}
         activeProfile={activeProfile}
@@ -774,6 +775,13 @@ function HomeView({
         </>
       )}
 
+      {shelves.paraVerJuntos.length > 0 && (
+        <>
+          <SectionHeader icon={Users} title="Para ver juntos" action="Pendientes" onAction={() => setActiveTab("pending")} />
+          <HorizontalShelf titles={shelves.paraVerJuntos} onSelect={openShelfTitle} />
+        </>
+      )}
+
       {shelves.trending.length > 0 && (
         <>
           <SectionHeader icon={Flame} title="Tendencia esta semana" />
@@ -787,34 +795,6 @@ function HomeView({
           <HorizontalShelf titles={shelves.bestImdb} onSelect={openShelfTitle} />
         </>
       )}
-
-      {shelves.novedades.length > 0 && (
-        <>
-          <SectionHeader icon={Sparkles} title="Novedades en el catalogo" />
-          <HorizontalShelf titles={shelves.novedades} onSelect={openShelfTitle} />
-        </>
-      )}
-
-      {bestShared.length > 0 && (
-        <>
-          <SectionHeader icon={Users} title="Mejor valoradas por vosotros" action="Notas" onAction={() => setActiveTab("ratings")} />
-          <HorizontalShelf titles={bestShared.map((item) => item.title)} onSelect={openShelfTitle} />
-        </>
-      )}
-
-      {shelves.byProvider.map(({ provider, titles: providerTitles }) => (
-        <div key={provider.key}>
-          <SectionHeader icon={Ticket} title={provider.name} />
-          <HorizontalShelf titles={providerTitles} onSelect={openShelfTitle} />
-        </div>
-      ))}
-
-      {shelves.byGenre.map(({ genre, titles: genreTitles }) => (
-        <div key={genre}>
-          <SectionHeader icon={Film} title={genre} />
-          <HorizontalShelf titles={genreTitles} onSelect={openShelfTitle} />
-        </div>
-      ))}
     </div>
   );
 }
@@ -853,6 +833,7 @@ function ExploreView({
         <label className="flex h-11 items-center gap-2 rounded-xl bg-black/24 px-3">
           <Search size={18} className="text-[var(--muted)]" />
           <input
+            id="cine-search-input"
             value={filters.query}
             onChange={(event) => setFilters((current) => ({ ...current, query: event.target.value }))}
             placeholder="Buscar pelicula o serie"
@@ -1727,7 +1708,7 @@ function HorizontalShelf({
           key={title.id}
           type="button"
           onClick={() => onSelect(title)}
-          className="w-[132px] shrink-0 text-left"
+          className="w-[132px] shrink-0 snap-start text-left"
         >
           <Poster title={title} size="shelf" />
           <p className="mt-2 line-clamp-2 text-sm font-semibold leading-5">{title.title}</p>
