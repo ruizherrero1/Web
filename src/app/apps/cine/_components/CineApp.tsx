@@ -119,6 +119,8 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
   const [trendingKeys, setTrendingKeys] = useState<string[]>([]);
   const [online, setOnline] = useState(true);
   const [pendingWrites, setPendingWrites] = useState(0);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [newSinceVisit, setNewSinceVisit] = useState(0);
 
   const loadCatalog = async () => {
     if (!accessToken) return;
@@ -132,7 +134,19 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
       if (!response.ok) throw new Error(payload.error ?? "No se pudo cargar el catalogo.");
       const nextTitles = (payload.titles ?? []) as CineTitle[];
       setTitles(nextTitles);
+      setLastSyncedAt((payload.lastSyncedAt as string | null) ?? null);
       setSelectedTitleId((current) => (nextTitles.some((title) => title.id === current) ? current : nextTitles[0]?.id ?? ""));
+
+      // "New since your last visit" banner, tracked per device in localStorage.
+      try {
+        const lastVisit = window.localStorage.getItem("cine-last-visit");
+        if (lastVisit) {
+          setNewSinceVisit(nextTitles.filter((title) => title.addedAt && title.addedAt > lastVisit).length);
+        }
+        window.localStorage.setItem("cine-last-visit", new Date().toISOString());
+      } catch {
+        // localStorage unavailable: skip the banner.
+      }
     } catch (error) {
       setCatalogError(error instanceof Error ? error.message : "No se pudo cargar el catalogo.");
     } finally {
@@ -425,6 +439,21 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
               {catalogError}
             </div>
           )}
+          {newSinceVisit > 0 && (
+            <button
+              type="button"
+              onClick={() => { setActiveTab("home"); setNewSinceVisit(0); }}
+              className="mb-4 flex w-full items-center gap-2 rounded-xl border border-[var(--gold)]/30 bg-[var(--gold)]/10 p-3 text-left text-sm font-semibold text-[var(--gold)]"
+            >
+              <Sparkles size={16} />
+              {newSinceVisit} titulo{newSinceVisit === 1 ? "" : "s"} nuevo{newSinceVisit === 1 ? "" : "s"} desde tu ultima visita
+            </button>
+          )}
+          {activeTab === "home" && lastSyncedAt && (
+            <p className="mb-3 text-right text-[10px] text-[var(--muted)]">
+              Catalogo actualizado: {formatRelativeTime(lastSyncedAt)}
+            </p>
+          )}
           {activeTab === "home" && (
             <HomeView
               titles={titles}
@@ -457,7 +486,7 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
             <TodayView titles={titles} activeProfile={activeProfile} openDetail={setDetailTitle} />
           )}
           {activeTab === "pending" && (
-            <PendingView titles={pendingTitles} openDetail={setDetailTitle} />
+            <PendingView titles={pendingTitles} openDetail={setDetailTitle} updatePendingCategory={updatePendingCategory} />
           )}
           {activeTab === "ratings" && <RatingsView titles={titles} />}
           <p className="mt-6 text-center text-[10px] leading-4 text-[var(--muted)]">
@@ -774,6 +803,13 @@ function ExploreView({
   openDetail: (title: CineTitle) => void;
   openRating: (title: CineTitle) => void;
 }) {
+  // Render the big list in pages: with 1000+ titles, mounting every card at
+  // once makes this tab janky on mobile.
+  const pageSize = 40;
+  const [visibleCount, setVisibleCount] = useState(pageSize);
+  const visibleTitles = titles.slice(0, visibleCount);
+  const remaining = titles.length - visibleTitles.length;
+
   return (
     <div className="space-y-4">
       <div className="space-y-3 rounded-2xl border border-white/10 bg-white/6 p-3">
@@ -891,8 +927,10 @@ function ExploreView({
         </div>
       </div>
 
+      <p className="text-xs text-[var(--muted)]">{titles.length} resultados</p>
+
       <div className="space-y-3">
-        {titles.map((title) => (
+        {visibleTitles.map((title) => (
           <TitleCard
             key={title.id}
             title={title}
@@ -905,6 +943,16 @@ function ExploreView({
           />
         ))}
       </div>
+
+      {remaining > 0 && (
+        <button
+          type="button"
+          onClick={() => setVisibleCount((current) => current + pageSize)}
+          className="w-full rounded-xl border border-white/10 bg-white/8 py-3 text-sm font-semibold text-[var(--text-soft)] transition hover:bg-white/14"
+        >
+          Cargar mas ({remaining} restantes)
+        </button>
+      )}
     </div>
   );
 }
@@ -1060,26 +1108,70 @@ function TodayView({
 
 function PendingView({
   titles,
-  openDetail
+  openDetail,
+  updatePendingCategory
 }: {
   titles: CineTitle[];
   openDetail: (title: CineTitle) => void;
+  updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
 }) {
+  const moveTitle = (title: CineTitle, from: PendingCategory, to: PendingCategory) => {
+    if (from === to) return;
+    updatePendingCategory(title.id, to, "add");
+    updatePendingCategory(title.id, from, "remove");
+  };
+
+  const hasAny = titles.length > 0;
+
   return (
     <div className="space-y-5">
       <SectionHeader icon={BookmarkPlus} title="Pendientes" />
+      {!hasAny && (
+        <p className="rounded-xl border border-white/10 bg-white/6 p-4 text-sm text-[var(--muted)]">
+          No hay pendientes todavia. Anade titulos desde Buscar o desde la ficha.
+        </p>
+      )}
       {pendingCategories.map((category) => {
         const categoryTitles = titles.filter((title) => title.pendingCategories.includes(category));
         if (categoryTitles.length === 0) return null;
         return (
-          <section key={category} className="space-y-3">
+          <section key={category} className="space-y-2">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">{category}</h2>
               <span className="rounded-full bg-white/8 px-2 py-1 text-xs text-[var(--muted)]">
                 {categoryTitles.length}
               </span>
             </div>
-            <HorizontalShelf titles={categoryTitles} onSelect={openDetail} />
+            {categoryTitles.map((title) => (
+              <div key={`${category}-${title.id}`} className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/6 p-2.5">
+                <button type="button" onClick={() => openDetail(title)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                  <Poster title={title} size="small" />
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold">{title.title}</p>
+                    <p className="truncate text-xs text-[var(--muted)]">{formatTitleMeta(title, true)}</p>
+                  </div>
+                </button>
+                <label className="shrink-0" aria-label="Mover de categoria">
+                  <select
+                    value={category}
+                    onChange={(event) => moveTitle(title, category, event.target.value as PendingCategory)}
+                    className="h-9 max-w-[110px] rounded-lg bg-black/24 px-2 text-xs text-[var(--text-soft)] outline-none"
+                  >
+                    {pendingCategories.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => updatePendingCategory(title.id, category, "remove")}
+                  className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white/8 text-[var(--text-soft)] transition hover:bg-red-500/25"
+                  aria-label={`Quitar de ${category}`}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ))}
           </section>
         );
       })}
@@ -1103,13 +1195,100 @@ function RatingsView({ titles }: { titles: CineTitle[] }) {
     })
     .sort((left, right) => right.average - left.average);
 
+  const stats = useMemo(() => {
+    const watched = (profile: ProfileKey) => titles.filter((t) => t.personal[profile].status === "watched").length;
+    const ratingsOf = (profile: ProfileKey) =>
+      titles.map((t) => t.personal[profile].rating).filter((r): r is number => Boolean(r));
+    const avg = (values: number[]) => (values.length ? values.reduce((s, v) => s + v, 0) / values.length : null);
+
+    const rrRatings = ratingsOf("RR");
+    const lbRatings = ratingsOf("LB");
+    const watchedBoth = titles.filter(
+      (t) => t.personal.RR.status === "watched" && t.personal.LB.status === "watched"
+    ).length;
+
+    // Couple average per genre (min 2 rated titles so one outlier doesn't top the list).
+    const genreSums = new Map<string, { total: number; count: number }>();
+    for (const title of titles) {
+      const rating = coupleRating(title);
+      if (!rating) continue;
+      for (const genre of title.genres) {
+        const entry = genreSums.get(genre) ?? { total: 0, count: 0 };
+        entry.total += rating;
+        entry.count += 1;
+        genreSums.set(genre, entry);
+      }
+    }
+    const topGenres = [...genreSums.entries()]
+      .filter(([, { count }]) => count >= 2)
+      .map(([genre, { total, count }]) => ({ genre, avg: total / count, count }))
+      .sort((a, b) => b.avg - a.avg)
+      .slice(0, 5);
+
+    const disagreements = rated
+      .filter((item) => item.gap !== null && item.gap > 0)
+      .sort((a, b) => (b.gap ?? 0) - (a.gap ?? 0))
+      .slice(0, 3);
+
+    return {
+      watchedRR: watched("RR"),
+      watchedLB: watched("LB"),
+      watchedBoth,
+      avgRR: avg(rrRatings),
+      avgLB: avg(lbRatings),
+      votesRR: rrRatings.length,
+      votesLB: lbRatings.length,
+      topGenres,
+      disagreements,
+    };
+  }, [titles, rated]);
+
   return (
     <div className="space-y-4">
       <SectionHeader icon={Star} title="Notas RR/LB" />
+
+      <div className="grid grid-cols-3 gap-2">
+        <Metric icon={Users} label="Vistas juntos" value={stats.watchedBoth.toString()} />
+        <Metric label="Vistas RR" value={stats.watchedRR.toString()} />
+        <Metric label="Vistas LB" value={stats.watchedLB.toString()} />
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <ScorePanel label={`Media RR (${stats.votesRR} notas)`} value={stats.avgRR ? stats.avgRR.toFixed(1) : "-"} />
+        <ScorePanel label={`Media LB (${stats.votesLB} notas)`} value={stats.avgLB ? stats.avgLB.toFixed(1) : "-"} />
+      </div>
       <div className="grid grid-cols-2 gap-2">
         <ScorePanel label="Top RR" value={topScore(titles, "RR")} />
         <ScorePanel label="Top LB" value={topScore(titles, "LB")} />
       </div>
+
+      {stats.topGenres.length > 0 && (
+        <div className="rounded-2xl border border-white/8 bg-white/6 p-3">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Vuestros generos favoritos</p>
+          <div className="space-y-1.5">
+            {stats.topGenres.map(({ genre, avg: genreAvg, count }) => (
+              <div key={genre} className="flex items-center justify-between text-sm">
+                <span className="truncate">{genre}</span>
+                <span className="shrink-0 font-bold text-[var(--gold)]">{genreAvg.toFixed(1)} <span className="font-normal text-[var(--muted)]">({count})</span></span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {stats.disagreements.length > 0 && (
+        <div className="rounded-2xl border border-white/8 bg-white/6 p-3">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Donde mas discrepais</p>
+          <div className="space-y-1.5">
+            {stats.disagreements.map(({ title, rr, lb, gap }) => (
+              <div key={title.id} className="flex items-center justify-between gap-2 text-sm">
+                <span className="truncate">{title.title}</span>
+                <span className="shrink-0 text-[var(--muted)]">RR {rr} / LB {lb} <strong className="text-[var(--gold)]">Δ{gap}</strong></span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="space-y-2">
         {rated.map(({ title, rr, lb, gap }) => (
           <div key={title.id} className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/6 p-3">
@@ -1748,6 +1927,15 @@ function formatTitleMeta(title: CineTitle, compact = false) {
       : "Serie";
   const parts = [title.year || null, runtime, compact ? null : title.genres.slice(0, 2).join(" / ")].filter(Boolean);
   return parts.join(" - ");
+}
+
+function formatRelativeTime(iso: string) {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const hours = Math.floor(diffMs / (1000 * 60 * 60));
+  if (hours < 1) return "hace menos de 1 hora";
+  if (hours < 24) return `hace ${hours} hora${hours === 1 ? "" : "s"}`;
+  const days = Math.floor(hours / 24);
+  return `hace ${days} dia${days === 1 ? "" : "s"}`;
 }
 
 function formatRuntime(minutes: number) {
