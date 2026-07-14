@@ -106,14 +106,20 @@ export function AuthGate({ children }: AuthGateProps) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       setSession(nextSession);
-      if (nextSession) {
-        await loadProfile(nextSession.user.id);
-      } else {
+      if (!nextSession) {
         setProfile(null);
+        setLoaded(true);
+        return;
       }
-      setLoaded(true);
+      // IMPORTANT: never await Supabase calls inside this callback. supabase-js
+      // holds its internal auth lock while notifying subscribers, and loadProfile's
+      // query needs that same lock, so awaiting here deadlocks signInWithPassword
+      // (the login button hangs on "Entrando..." forever). Defer out of the lock.
+      setTimeout(() => {
+        void loadProfile(nextSession.user.id).finally(() => setLoaded(true));
+      }, 0);
     });
 
     return () => subscription.unsubscribe();
