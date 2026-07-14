@@ -26,7 +26,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { demoTitles, pendingCategories, profiles, providers } from "../_lib/cine-data";
 import { CINE_QUEUE_CHANGED, enqueueMutation, flushQueue, getPendingCount } from "../_lib/offline";
-import type { CineTitle, MediaKind, MonetizationType, PendingCategory, ProfileKey, ProviderKey, TitleDetail, WatchStatus } from "../_lib/types";
+import type { CineTitle, MediaKind, MonetizationType, PendingCategory, PersonalState, ProfileKey, ProviderKey, TitleDetail, WatchStatus } from "../_lib/types";
 
 function isOffline() {
   return typeof navigator !== "undefined" && !navigator.onLine;
@@ -245,7 +245,10 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
     .filter((item) => item.average > 0)
     .sort((left, right) => right.average - left.average);
 
-  const persistState = async (title: CineTitle, state: { status?: WatchStatus; rating?: number | null; scope?: "me" | "both" }) => {
+  const persistState = async (
+    title: CineTitle,
+    state: { status?: WatchStatus; rating?: number | null; season?: number | null; episode?: number | null; scope?: "me" | "both" }
+  ) => {
     if (!accessToken || !title.tmdbId) return;
     const body = { tmdbId: title.tmdbId, mediaType: title.kind, ...state };
 
@@ -386,6 +389,36 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
         }
         return { ...title, personal: nextPersonal };
       })
+    );
+  };
+
+  // Series progress (personal): saving S/E also marks the series as "watching"
+  // unless it is already watched.
+  const updateProgress = (titleId: string, season: number | null, episode: number | null) => {
+    const currentTitle = titles.find((title) => title.id === titleId);
+    if (!currentTitle) return;
+    const currentStatus = currentTitle.personal[activeProfile].status;
+    const nextStatus: WatchStatus = currentStatus === "watched" ? "watched" : season || episode ? "watching" : currentStatus;
+
+    void persistState(currentTitle, { season, episode, status: nextStatus });
+
+    setTitles((current) =>
+      current.map((title) =>
+        title.id === titleId
+          ? {
+              ...title,
+              personal: {
+                ...title.personal,
+                [activeProfile]: {
+                  ...title.personal[activeProfile],
+                  season: season ?? undefined,
+                  episode: episode ?? undefined,
+                  status: nextStatus,
+                },
+              },
+            }
+          : title
+      )
     );
   };
 
@@ -536,13 +569,14 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
       )}
       {detailTitle && (
         <TitleDetailSheet
-          title={detailTitle}
+          title={titles.find((t) => t.id === detailTitle.id) ?? detailTitle}
           accessToken={accessToken}
           activeProfile={activeProfile}
           onClose={() => setDetailTitle(null)}
           markWatched={markWatched}
           openRating={setRatingFor}
           updatePendingCategory={updatePendingCategory}
+          updateProgress={updateProgress}
         />
       )}
       {ratingFor && (
@@ -1383,6 +1417,56 @@ function HeroTitle({
   );
 }
 
+function SeriesProgress({
+  title,
+  activeProfile,
+  updateProgress
+}: {
+  title: CineTitle;
+  activeProfile: ProfileKey;
+  updateProgress: (titleId: string, season: number | null, episode: number | null) => void;
+}) {
+  const state = title.personal[activeProfile];
+  const season = state.season ?? 0;
+  const episode = state.episode ?? 0;
+
+  const set = (nextSeason: number, nextEpisode: number) => {
+    const s = Math.max(0, nextSeason);
+    const e = Math.max(0, nextEpisode);
+    updateProgress(title.id, s || null, e || null);
+  };
+
+  const stepper = (label: string, value: number, onDown: () => void, onUp: () => void) => (
+    <div className="flex flex-1 items-center justify-between rounded-lg bg-white/6 px-2 py-1.5">
+      <span className="text-[10px] font-bold text-[var(--muted)]">{label}</span>
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={onDown} className="grid h-8 w-8 place-items-center rounded-md bg-black/30 text-lg font-bold text-[var(--text-soft)]" aria-label={`Bajar ${label}`}>
+          -
+        </button>
+        <span className="w-6 text-center text-sm font-black">{value || "-"}</span>
+        <button type="button" onClick={onUp} className="grid h-8 w-8 place-items-center rounded-md bg-black/30 text-lg font-bold text-[var(--text-soft)]" aria-label={`Subir ${label}`}>
+          +
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="rounded-xl bg-black/24 p-2">
+      <div className="mb-2 flex items-center justify-between text-xs text-[var(--muted)]">
+        <span>Por donde vas ({activeProfile})</span>
+        <strong className="text-[var(--text-main)]">
+          {season || episode ? `T${season || "?"} E${episode || "?"}` : state.status === "watching" ? "Viendo" : "Sin empezar"}
+        </strong>
+      </div>
+      <div className="flex gap-2">
+        {stepper("Temporada", season, () => set(season - 1, episode), () => set(season + 1, episode))}
+        {stepper("Episodio", episode, () => set(season, episode - 1), () => set(season || 1, episode + 1))}
+      </div>
+    </div>
+  );
+}
+
 function TitleDetailSheet({
   title,
   accessToken,
@@ -1390,7 +1474,8 @@ function TitleDetailSheet({
   onClose,
   markWatched,
   openRating,
-  updatePendingCategory
+  updatePendingCategory,
+  updateProgress
 }: {
   title: CineTitle;
   accessToken?: string;
@@ -1399,6 +1484,7 @@ function TitleDetailSheet({
   markWatched: (titleId: string, scope: "me" | "both") => void;
   openRating: (title: CineTitle) => void;
   updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
+  updateProgress: (titleId: string, season: number | null, episode: number | null) => void;
 }) {
   const [detail, setDetail] = useState<TitleDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1543,6 +1629,9 @@ function TitleDetailSheet({
               Vista ambos
             </button>
           </div>
+          {title.kind === "series" && (
+            <SeriesProgress title={title} activeProfile={activeProfile} updateProgress={updateProgress} />
+          )}
           <NotaButton title={title} activeProfile={activeProfile} openRating={openRating} />
           <PendingCategoryControls title={title} updatePendingCategory={updatePendingCategory} />
         </div>
@@ -1685,20 +1774,23 @@ function WatchStatusStrip({
     <div className={`${compact ? "mt-2" : ""} rounded-xl border border-white/8 bg-black/24 p-2`}>
       {!compact && <p className="mb-2 text-xs font-semibold text-[var(--gold)]">{summary}</p>}
       <div className="grid grid-cols-2 gap-2">
-        <StatusPill label="RR" status={title.personal.RR.status} watchedAt={title.personal.RR.watchedAt} />
-        <StatusPill label="LB" status={title.personal.LB.status} watchedAt={title.personal.LB.watchedAt} />
+        <StatusPill label="RR" state={title.personal.RR} />
+        <StatusPill label="LB" state={title.personal.LB} />
       </div>
     </div>
   );
 }
 
-function StatusPill({ label, status, watchedAt }: { label: ProfileKey; status: WatchStatus; watchedAt?: string }) {
-  const isWatched = status === "watched";
+function StatusPill({ label, state }: { label: ProfileKey; state: PersonalState }) {
+  const isWatched = state.status === "watched";
+  const progress = state.status === "watching" && (state.season || state.episode)
+    ? ` T${state.season ?? "?"} E${state.episode ?? "?"}`
+    : "";
   return (
     <div className={`rounded-lg px-2 py-1.5 ${isWatched ? "bg-[rgba(68,209,157,0.16)] text-[#92f0c9]" : "bg-white/6 text-[var(--muted)]"}`}>
       <p className="text-[10px] font-black">{label}</p>
-      <p className="text-xs font-semibold">{watchStatusLabels[status]}</p>
-      {watchedAt && <p className="text-[10px] opacity-75">{watchedAt}</p>}
+      <p className="text-xs font-semibold">{watchStatusLabels[state.status]}{progress}</p>
+      {state.watchedAt && <p className="text-[10px] opacity-75">{state.watchedAt}</p>}
     </div>
   );
 }

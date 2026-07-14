@@ -39,6 +39,8 @@ type DbState = {
   status: WatchStatus;
   rating: number | null;
   watched_at: string | null;
+  progress_season: number | null;
+  progress_episode: number | null;
   cine_profiles?: { initials: ProfileKey } | null;
 };
 
@@ -63,7 +65,7 @@ export async function GET(request: Request) {
     const [titles, availability, states, pending] = await Promise.all([
       fetchAll<DbTitle>(() => auth.supabase.from("cine_titles").select(titleSelect).order("tmdb_popularity", { ascending: false })),
       fetchAll<DbAvailability>(() => auth.supabase.from("cine_availability").select("title_id, provider_key, monetization").eq("region", "ES")),
-      fetchAll<DbState>(() => auth.supabase.from("cine_user_title_states").select("title_id, status, rating, watched_at, cine_profiles(initials)")),
+      fetchAll<DbState>(() => auth.supabase.from("cine_user_title_states").select("title_id, status, rating, watched_at, progress_season, progress_episode, cine_profiles(initials)")),
       fetchAll<DbPending>(() => auth.supabase.from("cine_pending_items").select("title_id, cine_pending_categories(name), cine_profiles(initials)")),
     ]);
 
@@ -156,6 +158,8 @@ function resolvePersonalState(states: DbState[], profile: ProfileKey) {
     status: source?.status ?? "none",
     rating: source?.rating ?? undefined,
     watchedAt: source?.watched_at ?? undefined,
+    season: source?.progress_season ?? undefined,
+    episode: source?.progress_episode ?? undefined,
   };
 }
 
