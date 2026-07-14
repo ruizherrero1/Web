@@ -23,6 +23,7 @@ type DbTitle = {
   rt_tomatometer: number | null;
   runtime_minutes: number | null;
   ratings_updated_at: string | null;
+  created_at: string | null;
   search_titles: string[] | null;
 };
 
@@ -49,7 +50,7 @@ type DbPending = {
 export const dynamic = "force-dynamic";
 
 const pageSize = 1000;
-const titleSelect = "id, tmdb_id, media_type, title, original_title, overview, poster_path, backdrop_path, release_year, runtime_label, genres, tmdb_vote, tmdb_popularity, imdb_id, imdb_rating, imdb_votes, metascore, rt_tomatometer, runtime_minutes, ratings_updated_at, search_titles";
+const titleSelect = "id, tmdb_id, media_type, title, original_title, overview, poster_path, backdrop_path, release_year, runtime_label, genres, tmdb_vote, tmdb_popularity, imdb_id, imdb_rating, imdb_votes, metascore, rt_tomatometer, runtime_minutes, ratings_updated_at, created_at, search_titles";
 
 export async function GET(request: Request) {
   const auth = await requireCineProfile(request);
@@ -124,6 +125,7 @@ function mapTitles(
       metascore: title.metascore ?? undefined,
       rtTomatometer: title.rt_tomatometer ?? undefined,
       ratingsUpdatedAt: title.ratings_updated_at ?? undefined,
+      addedAt: title.created_at ?? undefined,
       tmdbPopularity: Number(title.tmdb_popularity ?? 0),
       availability: (availabilityByTitle.get(title.id) ?? []).map((item) => ({
         provider: item.provider_key,
