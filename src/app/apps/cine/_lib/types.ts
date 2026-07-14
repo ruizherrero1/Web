@@ -32,6 +32,8 @@ export type PersonalState = {
   rating?: number;
   status: WatchStatus;
   watchedAt?: string;
+  season?: number;
+  episode?: number;
 };
 
 export type TitleCredit = {

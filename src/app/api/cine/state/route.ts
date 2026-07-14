@@ -7,6 +7,8 @@ type StatePayload = {
   mediaType: MediaKind;
   status?: WatchStatus;
   rating?: number | null;
+  season?: number | null;
+  episode?: number | null;
   scope?: "me" | "both";
 };
 
@@ -15,6 +17,8 @@ type ExistingState = {
   status: WatchStatus;
   rating: number | null;
   watched_at: string | null;
+  progress_season: number | null;
+  progress_episode: number | null;
 };
 
 export async function POST(request: Request) {
@@ -49,7 +53,7 @@ export async function POST(request: Request) {
   const targetIds = (profiles ?? []).map((profile) => profile.id);
   const { data: existingStates, error: existingError } = await auth.supabase
     .from("cine_user_title_states")
-    .select("user_id, status, rating, watched_at")
+    .select("user_id, status, rating, watched_at, progress_season, progress_episode")
     .eq("title_id", title.id)
     .in("user_id", targetIds);
 
@@ -62,12 +66,18 @@ export async function POST(request: Request) {
   const existingByUser = new Map((existingStates ?? []).map((state) => [state.user_id, state as ExistingState]));
   const hasRating = Object.prototype.hasOwnProperty.call(payload, "rating");
   const hasStatus = Object.prototype.hasOwnProperty.call(payload, "status");
+  const hasProgress =
+    Object.prototype.hasOwnProperty.call(payload, "season") ||
+    Object.prototype.hasOwnProperty.call(payload, "episode");
 
   const upserts = (profiles ?? []).map((profile) => {
     const existing = existingByUser.get(profile.id);
     const isCurrentUser = profile.id === auth.profile.id;
     const nextStatus = hasStatus ? payload.status ?? "none" : existing?.status ?? "none";
     const nextRating = isCurrentUser && hasRating ? payload.rating ?? null : existing?.rating ?? null;
+    // Series progress is personal: only the current user's row is updated.
+    const nextSeason = isCurrentUser && hasProgress ? payload.season ?? null : existing?.progress_season ?? null;
+    const nextEpisode = isCurrentUser && hasProgress ? payload.episode ?? null : existing?.progress_episode ?? null;
 
     return {
       user_id: profile.id,
@@ -75,6 +85,8 @@ export async function POST(request: Request) {
       status: nextStatus,
       rating: nextRating,
       watched_at: nextStatus === "watched" ? existing?.watched_at ?? today : null,
+      progress_season: nextSeason,
+      progress_episode: nextEpisode,
       updated_at: now,
     };
   });

@@ -39,6 +39,12 @@ Notas externas (OMDb):
 
 ## Cambios recientes
 
+### 2026-07-14 - Lote de mejoras 2 (PRs #18, #19 y seguimiento de series)
+
+- PR #18 (mergeado): Buscar paginado (40 por pagina + "Cargar mas"), estadisticas en Notas (vistas, medias, generos favoritos, discrepancias), gestor de Pendientes (mover de categoria + quitar rapido), frescura (catalog devuelve `lastSyncedAt`; banner de titulos nuevos desde la ultima visita via localStorage).
+- PR #19 (mergeado): cookie de acceso ahora es token HMAC con expiracion 180 dias y `timingSafeEqual` (las cookies antiguas dejan de validar: pedir la password compartida una vez). PWA v2: SW con caches versionadas, navegaciones/catalogo network-first (los deploys siempre ganan), cache-first solo para `/_next/static` (inmutable) y posters TMDB; registro solo tras login en CineApp.
+- Rama `cine/series-progress` (PENDIENTE de migracion): seguimiento de series por usuario (temporada/episodio). Migracion `20260714_cine_series_progress.sql` anade `progress_season`/`progress_episode` a `cine_user_title_states`. NO mergear hasta aplicar la migracion o `/api/cine/catalog` fallara (selecciona las columnas nuevas).
+
 ### 2026-07-13 - Hotfix: "Preparando Cine" colgado (hidratacion)
 
 Ramas `cine/hotfix-hydration` y `cine/hotfix-layout`.

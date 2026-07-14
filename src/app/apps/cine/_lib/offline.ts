@@ -6,7 +6,15 @@ import type { MediaKind, PendingCategory, ProfileKey, WatchStatus } from "./type
 
 export type StateMutation = {
   kind: "state";
-  body: { tmdbId: number; mediaType: MediaKind; status?: WatchStatus; rating?: number | null; scope?: "me" | "both" };
+  body: {
+    tmdbId: number;
+    mediaType: MediaKind;
+    status?: WatchStatus;
+    rating?: number | null;
+    season?: number | null;
+    episode?: number | null;
+    scope?: "me" | "both";
+  };
 };
 
 export type PendingMutation = {
