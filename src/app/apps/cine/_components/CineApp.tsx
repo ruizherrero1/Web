@@ -189,9 +189,12 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
   }, [accessToken]);
 
   useEffect(() => {
-    // PWA offline is on hold: we no longer register a service worker (a stale SW
-    // cache was breaking hydration after deploys). We still track online status
-    // and the offline write queue for user feedback.
+    // Register the v2 service worker (offline read + cached posters). It runs
+    // only here, after login, and v2 serves navigations network-first with
+    // versioned caches, so a deploy can't get stuck behind a stale cache again.
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/cine-sw.js", { scope: "/apps/cine" }).catch(() => {});
+    }
     const refreshPending = () => setPendingWrites(getPendingCount());
     const goOnline = () => setOnline(true);
     const goOffline = () => setOnline(false);
