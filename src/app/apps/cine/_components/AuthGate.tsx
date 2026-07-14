@@ -53,12 +53,24 @@ export function AuthGate({ children }: AuthGateProps) {
     const supabase = createClient();
 
     async function loadSession() {
-      const { data } = await supabase.auth.getSession();
-      setSession(data.session);
-      if (data.session) {
-        await loadProfile(data.session.user.id);
+      try {
+        const timeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("session-timeout")), 8000)
+        );
+        const { data } = await Promise.race([supabase.auth.getSession(), timeout]);
+        setSession(data.session);
+        if (data.session) {
+          await Promise.race([loadProfile(data.session.user.id), timeout]);
+        }
+      } catch {
+        // If the session check fails or hangs (e.g. the network cannot reach
+        // Supabase), fall through to the login screen instead of hanging on the
+        // "Preparando Cine" splash forever.
+        setSession(null);
+        setErrorMessage("No se pudo verificar la sesion. Revisa tu conexion e intenta entrar.");
+      } finally {
+        setLoaded(true);
       }
-      setLoaded(true);
     }
 
     async function loadProfile(userId: string) {
