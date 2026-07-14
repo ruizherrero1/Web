@@ -17,8 +17,8 @@ export type CatalogSyncResult = {
 };
 
 export function getPagesPerProvider() {
-  const configured = Number(process.env.CINE_TMDB_PAGES_PER_PROVIDER ?? 8);
-  return Number.isFinite(configured) ? Math.min(Math.max(configured, 1), 25) : 8;
+  const configured = Number(process.env.CINE_TMDB_PAGES_PER_PROVIDER ?? 20);
+  return Number.isFinite(configured) ? Math.min(Math.max(configured, 1), 40) : 20;
 }
 
 // Full pipeline: import from TMDB, refresh availability, migrate legacy marks and enrich ratings.
@@ -141,7 +141,7 @@ async function enrichRatingsFromOmdb(supabase: SupabaseClient): Promise<RatingsR
         if (ratings.imdbId) patch.imdb_id = ratings.imdbId;
         if (ratings.imdbRating !== null) patch.imdb_rating = ratings.imdbRating;
         if (ratings.imdbVotes !== null) patch.imdb_votes = ratings.imdbVotes;
-        if (ratings.rtTomatometer !== null) patch.rt_tomatometer = ratings.rtTomatometer;
+        // Rotten Tomatoes is now shown as a link to their site, not stored as a score.
         if (ratings.metascore !== null) patch.metascore = ratings.metascore;
         if (ratings.runtimeMinutes !== null) patch.runtime_minutes = ratings.runtimeMinutes;
       }
