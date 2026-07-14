@@ -11,6 +11,7 @@ import {
   Flame,
   Home,
   Info,
+  LogOut,
   Play,
   RefreshCw,
   Search,
@@ -103,7 +104,7 @@ const watchStatusLabels: Record<WatchStatus, string> = {
   abandoned: "Abandonada"
 };
 
-export function CineApp({ currentProfile, accessToken }: { currentProfile?: ProfileKey; accessToken?: string }) {
+export function CineApp({ currentProfile, accessToken, onSignOut }: { currentProfile?: ProfileKey; accessToken?: string; onSignOut?: () => void }) {
   const [activeTab, setActiveTab] = useState<TabKey>("home");
   const [previewProfile, setPreviewProfile] = useState<ProfileKey>("RR");
   const activeProfile = currentProfile ?? previewProfile;
@@ -466,6 +467,16 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
                   {profile.key}
                 </button>
               ))}
+              {onSignOut && (
+                <button
+                  type="button"
+                  onClick={onSignOut}
+                  className="grid h-9 w-9 place-items-center rounded-full text-[var(--muted)] transition hover:bg-white/10"
+                  aria-label="Salir"
+                >
+                  <LogOut size={16} />
+                </button>
+              )}
             </div>
           </div>
         </header>
