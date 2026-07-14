@@ -24,6 +24,7 @@ type DbTitle = {
   runtime_minutes: number | null;
   ratings_updated_at: string | null;
   created_at: string | null;
+  last_synced_at: string | null;
   search_titles: string[] | null;
 };
 
@@ -50,7 +51,7 @@ type DbPending = {
 export const dynamic = "force-dynamic";
 
 const pageSize = 1000;
-const titleSelect = "id, tmdb_id, media_type, title, original_title, overview, poster_path, backdrop_path, release_year, runtime_label, genres, tmdb_vote, tmdb_popularity, imdb_id, imdb_rating, imdb_votes, metascore, rt_tomatometer, runtime_minutes, ratings_updated_at, created_at, search_titles";
+const titleSelect = "id, tmdb_id, media_type, title, original_title, overview, poster_path, backdrop_path, release_year, runtime_label, genres, tmdb_vote, tmdb_popularity, imdb_id, imdb_rating, imdb_votes, metascore, rt_tomatometer, runtime_minutes, ratings_updated_at, created_at, last_synced_at, search_titles";
 
 export async function GET(request: Request) {
   const auth = await requireCineProfile(request);
@@ -66,8 +67,14 @@ export async function GET(request: Request) {
       fetchAll<DbPending>(() => auth.supabase.from("cine_pending_items").select("title_id, cine_pending_categories(name), cine_profiles(initials)")),
     ]);
 
+    const lastSyncedAt = titles.reduce<string | null>(
+      (latest, title) => (title.last_synced_at && (!latest || title.last_synced_at > latest) ? title.last_synced_at : latest),
+      null
+    );
+
     return NextResponse.json({
       titles: mapTitles(titles, availability, states, pending),
+      lastSyncedAt,
       attribution: "Source: TMDB. Streaming availability data is powered by TMDB/JustWatch.",
     });
   } catch (error) {
