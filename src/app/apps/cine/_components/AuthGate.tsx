@@ -13,7 +13,7 @@ type CineProfile = {
 };
 
 type AuthGateProps = {
-  children: React.ReactElement<{ currentProfile?: ProfileKey; accessToken?: string }>;
+  children: React.ReactElement<{ currentProfile?: ProfileKey; accessToken?: string; onSignOut?: () => void }>;
 };
 
 const isLocalPreviewAllowed = process.env.NODE_ENV !== "production";
@@ -253,21 +253,18 @@ export function AuthGate({ children }: AuthGateProps) {
 
   return (
     <div>
-      {session && (
-        <button
-          type="button"
-          onClick={signOut}
-          className="fixed right-4 top-4 z-40 rounded-full border border-white/10 bg-black/50 px-3 py-2 text-xs font-semibold text-[var(--text-soft)] backdrop-blur"
-        >
-          Salir
-        </button>
-      )}
       {!supabaseReady && previewMode && (
         <div className="fixed left-4 top-4 z-40 rounded-full border border-white/10 bg-black/50 px-3 py-2 text-xs font-semibold text-[var(--text-soft)] backdrop-blur">
           Preview local
         </div>
       )}
-      {React.cloneElement(children, { currentProfile: profile?.initials ?? "RR", accessToken: session?.access_token })}
+      {/* "Salir" lives inside the app header (CineApp) so it never overlaps the
+          header controls on mobile; the floating button it replaced did. */}
+      {React.cloneElement(children, {
+        currentProfile: profile?.initials ?? "RR",
+        accessToken: session?.access_token,
+        onSignOut: session ? signOut : undefined,
+      })}
     </div>
   );
 }
