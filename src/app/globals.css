@@ -246,6 +246,40 @@ body[data-mundial-standalone="true"] main {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Temas de color de Cine. Se eligen desde la app (icono paleta) y persisten en
+   localStorage por dispositivo. Solo cambian acento y fondos; el texto se queda. */
+.cine-app-shell[data-cine-theme="ocean"] {
+  --page-bg: #020507;
+  --app-bg: #061019;
+  --panel: #0c1c2b;
+  --gold: #5bc9f0;
+  --wine: #155a8a;
+}
+
+.cine-app-shell[data-cine-theme="emerald"] {
+  --page-bg: #020604;
+  --app-bg: #06130d;
+  --panel: #0c2117;
+  --gold: #46d99e;
+  --wine: #0f5f49;
+}
+
+.cine-app-shell[data-cine-theme="violet"] {
+  --page-bg: #040309;
+  --app-bg: #0d0818;
+  --panel: #170f29;
+  --gold: #b992f5;
+  --wine: #5b21b6;
+}
+
+.cine-app-shell[data-cine-theme="sunset"] {
+  --page-bg: #070302;
+  --app-bg: #150907;
+  --panel: #241009;
+  --gold: #fb9a4b;
+  --wine: #c22a4f;
+}
+
 .cine-app-shell button,
 .cine-app-shell input,
 .cine-app-shell select {
