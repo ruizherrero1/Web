@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCineAccessCookie, hasCineAccess, makeCineAccessCookie } from "../_lib";
-
-const oneYear = 60 * 60 * 24 * 365;
+import { cineAccessMaxAgeSeconds, getCineAccessCookie, hasCineAccess, makeCineAccessToken } from "../_lib";
 
 export async function GET(request: Request) {
   return NextResponse.json({ ok: hasCineAccess(request) });
@@ -18,21 +16,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid password." }, { status: 401 });
   }
 
+  const token = makeCineAccessToken();
   const response = NextResponse.json({ ok: true });
-  response.cookies.set(getCineAccessCookie(), makeCineAccessCookie(configuredPassword), {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/apps/cine",
-    maxAge: oneYear,
-  });
-  response.cookies.set(getCineAccessCookie(), makeCineAccessCookie(configuredPassword), {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/api/cine",
-    maxAge: oneYear,
-  });
+  for (const path of ["/apps/cine", "/api/cine"]) {
+    response.cookies.set(getCineAccessCookie(), token, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path,
+      maxAge: cineAccessMaxAgeSeconds,
+    });
+  }
 
   return response;
 }

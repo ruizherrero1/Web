@@ -1,4 +1,4 @@
-import { createHash } from "crypto";
+import { createHmac, timingSafeEqual } from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import type { ProviderKey } from "@/app/apps/cine/_lib/types";
 
@@ -21,14 +21,28 @@ export function getCineAccessCookie() {
   return "cine_access";
 }
 
-export function makeCineAccessCookie(password: string) {
-  const secret = process.env.CINE_COOKIE_SECRET ?? password;
-  return createHash("sha256").update(`${password}:${secret}`).digest("hex");
+// Access cookie lifetime. Long enough not to nag RR/LB, but the token now
+// expires (the previous cookie was a static hash valid forever).
+export const cineAccessMaxAgeSeconds = 60 * 60 * 24 * 180;
+
+function getCineCookieSecret() {
+  // Falls back to the shared password only so the gate keeps working if the
+  // secret env var is missing; CINE_COOKIE_SECRET should always be set.
+  return process.env.CINE_COOKIE_SECRET ?? process.env.CINE_SHARED_PASSWORD ?? "";
+}
+
+// HMAC-signed token with an expiry: `${expiresAtMs}.${hmac(expiresAtMs)}`.
+export function makeCineAccessToken() {
+  const secret = getCineCookieSecret();
+  const expiresAt = Date.now() + cineAccessMaxAgeSeconds * 1000;
+  const signature = createHmac("sha256", secret).update(String(expiresAt)).digest("hex");
+  return `${expiresAt}.${signature}`;
 }
 
 export function hasCineAccess(request: Request) {
-  const password = process.env.CINE_SHARED_PASSWORD;
-  if (!password) return false;
+  const secret = getCineCookieSecret();
+  if (!secret) return false;
+
   const cookieHeader = request.headers.get("cookie") ?? "";
   const cookies = Object.fromEntries(
     cookieHeader
@@ -36,7 +50,16 @@ export function hasCineAccess(request: Request) {
       .map((part) => part.trim().split("="))
       .filter((parts): parts is [string, string] => parts.length === 2)
   );
-  return cookies[getCineAccessCookie()] === makeCineAccessCookie(password);
+
+  const token = cookies[getCineAccessCookie()];
+  if (!token) return false;
+  const [rawExpires, signature] = token.split(".");
+  const expiresAt = Number(rawExpires);
+  if (!Number.isFinite(expiresAt) || expiresAt < Date.now() || !signature) return false;
+
+  const expected = createHmac("sha256", secret).update(rawExpires).digest("hex");
+  if (signature.length !== expected.length) return false;
+  return timingSafeEqual(Buffer.from(signature, "utf8"), Buffer.from(expected, "utf8"));
 }
 export const providerNames: Record<ProviderKey, string> = {
   netflix: "Netflix",
