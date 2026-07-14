@@ -212,6 +212,23 @@ body[data-mundial-standalone="true"] main {
   }
 }
 
+/* Cine, sensacion de app nativa: sin barras de scroll estilo Windows dentro de
+   la app (las estanterias y filas de chips scrollean igual, solo se oculta la
+   barra), sin flash azul al tocar botones y sin que el scroll horizontal de una
+   estanteria dispare el gesto de "volver atras" del navegador. */
+.cine-app-shell * {
+  scrollbar-width: none;
+}
+
+.cine-app-shell *::-webkit-scrollbar {
+  display: none;
+}
+
+.cine-app-shell .overflow-x-auto {
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+}
+
 /* Cine embebido en /apps/cine */
 .cine-app-shell {
   --page-bg: #050404;
@@ -226,6 +243,7 @@ body[data-mundial-standalone="true"] main {
   font-family: Arial, Helvetica, sans-serif;
   touch-action: manipulation;
   -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .cine-app-shell button,
