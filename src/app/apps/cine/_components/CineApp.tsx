@@ -454,20 +454,10 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
             />
           )}
           {activeTab === "today" && (
-            <TodayView
-              titles={titles}
-              activeProfile={activeProfile}
-              setSelectedTitleId={setSelectedTitleId}
-              setActiveTab={setActiveTab}
-              openDetail={setDetailTitle}
-            />
+            <TodayView titles={titles} activeProfile={activeProfile} openDetail={setDetailTitle} />
           )}
           {activeTab === "pending" && (
-            <PendingView
-              titles={pendingTitles}
-              setSelectedTitleId={setSelectedTitleId}
-              setActiveTab={setActiveTab}
-            />
+            <PendingView titles={pendingTitles} openDetail={setDetailTitle} />
           )}
           {activeTab === "ratings" && <RatingsView titles={titles} />}
           <p className="mt-6 text-center text-[10px] leading-4 text-[var(--muted)]">
@@ -694,6 +684,12 @@ function HomeView({
     return { unwatchedTogether, bestImdb, trending, novedades, byProvider, byGenre };
   }, [titles, trendingKeys]);
 
+  // Tapping a shelf poster opens the full detail sheet (and syncs the hero behind it).
+  const openShelfTitle = (title: CineTitle) => {
+    setSelectedTitleId(title.id);
+    openDetail(title);
+  };
+
   return (
     <div className="space-y-5">
       <HeroTitle
@@ -708,49 +704,49 @@ function HomeView({
       {shelves.unwatchedTogether.length > 0 && (
         <>
           <SectionHeader icon={Sparkles} title="Para decidir hoy" action="Buscar" onAction={() => setActiveTab("explore")} />
-          <HorizontalShelf titles={shelves.unwatchedTogether} setSelectedTitleId={setSelectedTitleId} />
+          <HorizontalShelf titles={shelves.unwatchedTogether} onSelect={openShelfTitle} />
         </>
       )}
 
       {shelves.trending.length > 0 && (
         <>
           <SectionHeader icon={Flame} title="Tendencia esta semana" />
-          <HorizontalShelf titles={shelves.trending} setSelectedTitleId={setSelectedTitleId} />
+          <HorizontalShelf titles={shelves.trending} onSelect={openShelfTitle} />
         </>
       )}
 
       {shelves.bestImdb.length > 0 && (
         <>
           <SectionHeader icon={Trophy} title="Mejores IMDb disponibles" />
-          <HorizontalShelf titles={shelves.bestImdb} setSelectedTitleId={setSelectedTitleId} />
+          <HorizontalShelf titles={shelves.bestImdb} onSelect={openShelfTitle} />
         </>
       )}
 
       {shelves.novedades.length > 0 && (
         <>
           <SectionHeader icon={Sparkles} title="Novedades en el catalogo" />
-          <HorizontalShelf titles={shelves.novedades} setSelectedTitleId={setSelectedTitleId} />
+          <HorizontalShelf titles={shelves.novedades} onSelect={openShelfTitle} />
         </>
       )}
 
       {bestShared.length > 0 && (
         <>
           <SectionHeader icon={Users} title="Mejor valoradas por vosotros" action="Notas" onAction={() => setActiveTab("ratings")} />
-          <HorizontalShelf titles={bestShared.map((item) => item.title)} setSelectedTitleId={setSelectedTitleId} />
+          <HorizontalShelf titles={bestShared.map((item) => item.title)} onSelect={openShelfTitle} />
         </>
       )}
 
       {shelves.byProvider.map(({ provider, titles: providerTitles }) => (
         <div key={provider.key}>
           <SectionHeader icon={Ticket} title={provider.name} />
-          <HorizontalShelf titles={providerTitles} setSelectedTitleId={setSelectedTitleId} />
+          <HorizontalShelf titles={providerTitles} onSelect={openShelfTitle} />
         </div>
       ))}
 
       {shelves.byGenre.map(({ genre, titles: genreTitles }) => (
         <div key={genre}>
           <SectionHeader icon={Film} title={genre} />
-          <HorizontalShelf titles={genreTitles} setSelectedTitleId={setSelectedTitleId} />
+          <HorizontalShelf titles={genreTitles} onSelect={openShelfTitle} />
         </div>
       ))}
     </div>
@@ -916,14 +912,10 @@ function ExploreView({
 function TodayView({
   titles,
   activeProfile,
-  setSelectedTitleId,
-  setActiveTab,
   openDetail
 }: {
   titles: CineTitle[];
   activeProfile: ProfileKey;
-  setSelectedTitleId: (id: string) => void;
-  setActiveTab: (tab: TabKey) => void;
   openDetail: (title: CineTitle) => void;
 }) {
   const [scope, setScope] = useState<TodayScope>("both");
@@ -1042,7 +1034,7 @@ function TodayView({
         <div className="space-y-2">
           {picks.map(({ title, score }) => (
             <div key={title.id} className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/6 p-3">
-              <button type="button" onClick={() => { setSelectedTitleId(title.id); setActiveTab("home"); }} className="shrink-0">
+              <button type="button" onClick={() => openDetail(title)} className="shrink-0">
                 <Poster title={title} size="small" />
               </button>
               <div className="min-w-0 flex-1">
@@ -1068,12 +1060,10 @@ function TodayView({
 
 function PendingView({
   titles,
-  setSelectedTitleId,
-  setActiveTab
+  openDetail
 }: {
   titles: CineTitle[];
-  setSelectedTitleId: (id: string) => void;
-  setActiveTab: (tab: TabKey) => void;
+  openDetail: (title: CineTitle) => void;
 }) {
   return (
     <div className="space-y-5">
@@ -1089,13 +1079,7 @@ function PendingView({
                 {categoryTitles.length}
               </span>
             </div>
-            <HorizontalShelf
-              titles={categoryTitles}
-              setSelectedTitleId={(id) => {
-                setSelectedTitleId(id);
-                setActiveTab("home");
-              }}
-            />
+            <HorizontalShelf titles={categoryTitles} onSelect={openDetail} />
           </section>
         );
       })}
@@ -1460,10 +1444,10 @@ function TitleCard({
 
 function HorizontalShelf({
   titles,
-  setSelectedTitleId
+  onSelect
 }: {
   titles: CineTitle[];
-  setSelectedTitleId: (id: string) => void;
+  onSelect: (title: CineTitle) => void;
 }) {
   return (
     <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-2">
@@ -1471,7 +1455,7 @@ function HorizontalShelf({
         <button
           key={title.id}
           type="button"
-          onClick={() => setSelectedTitleId(title.id)}
+          onClick={() => onSelect(title)}
           className="w-[132px] shrink-0 text-left"
         >
           <Poster title={title} size="shelf" />
