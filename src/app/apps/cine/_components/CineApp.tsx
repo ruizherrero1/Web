@@ -37,7 +37,7 @@ type TodayScope = "me" | "both";
 
 type SortKey = "top_rated" | "popular" | "recent";
 
-type RatingSource = "tmdb" | "imdb" | "rt" | "metacritic";
+type RatingSource = "tmdb" | "imdb" | "metacritic";
 
 type WatchFilter = "all" | "unseen_together" | "watched_rr" | "watched_lb" | "no_rating_mine" | "pending";
 
@@ -66,9 +66,11 @@ const initialFilters: Filters = {
 const ratingSources: Record<RatingSource, { label: string; unit: "ten" | "percent" }> = {
   tmdb: { label: "TMDB", unit: "ten" },
   imdb: { label: "IMDb", unit: "ten" },
-  rt: { label: "Rotten Tomatoes", unit: "percent" },
   metacritic: { label: "Metacritic", unit: "percent" }
 };
+
+const rottenTomatoesSearch = (title: CineTitle) =>
+  `https://www.rottentomatoes.com/search?search=${encodeURIComponent(title.title)}`;
 
 const watchFilterLabels: Record<WatchFilter, string> = {
   all: "Todas",
@@ -112,6 +114,7 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [selectedTitleId, setSelectedTitleId] = useState<string>(demoTitles[0]?.id ?? "");
   const [detailTitle, setDetailTitle] = useState<CineTitle | null>(null);
+  const [ratingFor, setRatingFor] = useState<CineTitle | null>(null);
   const [online, setOnline] = useState(true);
   const [pendingWrites, setPendingWrites] = useState(0);
 
@@ -205,10 +208,8 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
     (title) => title.personal.RR.status === "watched" && title.personal.LB.status === "watched"
   );
   const bestShared = watchedTogether
-    .map((title) => ({
-      title,
-      average: ((title.personal.RR.rating ?? 0) + (title.personal.LB.rating ?? 0)) / 2
-    }))
+    .map((title) => ({ title, average: coupleRating(title) ?? 0 }))
+    .filter((item) => item.average > 0)
     .sort((left, right) => right.average - left.average);
 
   const persistState = async (title: CineTitle, state: { status?: WatchStatus; rating?: number | null; scope?: "me" | "both" }) => {
@@ -325,21 +326,30 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
   const markWatched = (titleId: string, scope: "me" | "both") => {
     const today = new Date().toISOString().slice(0, 10);
     const currentTitle = titles.find((title) => title.id === titleId);
-    if (currentTitle) void persistState(currentTitle, { status: "watched", scope });
+    if (!currentTitle) return;
+
+    // Toggle: if it is already watched for this scope, unmark it (set back to "none").
+    const alreadyOn = scope === "both"
+      ? currentTitle.personal.RR.status === "watched" && currentTitle.personal.LB.status === "watched"
+      : currentTitle.personal[activeProfile].status === "watched";
+    const nextStatus: WatchStatus = alreadyOn ? "none" : "watched";
+
+    void persistState(currentTitle, { status: nextStatus, scope });
+
     setTitles((current) =>
       current.map((title) => {
         if (title.id !== titleId) return title;
-        const nextPersonal = {
-          ...title.personal,
-          [activeProfile]: {
-            ...title.personal[activeProfile],
-            status: "watched" as const,
-            watchedAt: today
-          }
-        };
+        const apply = (profile: ProfileKey) => ({
+          ...title.personal[profile],
+          status: nextStatus,
+          watchedAt: nextStatus === "watched" ? today : undefined,
+        });
+        const nextPersonal = { ...title.personal };
         if (scope === "both") {
-          nextPersonal.RR = { ...nextPersonal.RR, status: "watched", watchedAt: today };
-          nextPersonal.LB = { ...nextPersonal.LB, status: "watched", watchedAt: today };
+          nextPersonal.RR = apply("RR");
+          nextPersonal.LB = apply("LB");
+        } else {
+          nextPersonal[activeProfile] = apply(activeProfile);
         }
         return { ...title, personal: nextPersonal };
       })
@@ -407,10 +417,10 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
               setSelectedTitleId={setSelectedTitleId}
               setActiveTab={setActiveTab}
               markWatched={markWatched}
-              updateRating={updateRating}
               activeProfile={activeProfile}
               updatePendingCategory={updatePendingCategory}
               openDetail={setDetailTitle}
+              openRating={setRatingFor}
             />
           )}
           {activeTab === "explore" && (
@@ -419,11 +429,11 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
               filters={filters}
               setFilters={setFilters}
               setSelectedTitleId={setSelectedTitleId}
-              updateRating={updateRating}
               markWatched={markWatched}
               activeProfile={activeProfile}
               updatePendingCategory={updatePendingCategory}
               openDetail={setDetailTitle}
+              openRating={setRatingFor}
             />
           )}
           {activeTab === "today" && (
@@ -492,11 +502,109 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
           activeProfile={activeProfile}
           onClose={() => setDetailTitle(null)}
           markWatched={markWatched}
-          updateRating={updateRating}
+          openRating={setRatingFor}
           updatePendingCategory={updatePendingCategory}
         />
       )}
+      {ratingFor && (
+        <RatingModal
+          title={ratingFor}
+          activeProfile={activeProfile}
+          onPick={(rating) => {
+            updateRating(ratingFor.id, activeProfile, rating);
+            setRatingFor(null);
+          }}
+          onClose={() => setRatingFor(null)}
+        />
+      )}
     </main>
+  );
+}
+
+function RatingModal({
+  title,
+  activeProfile,
+  onPick,
+  onClose,
+}: {
+  title: CineTitle;
+  activeProfile: ProfileKey;
+  onPick: (rating: number | null) => void;
+  onClose: () => void;
+}) {
+  const current = title.personal[activeProfile].rating;
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center">
+      <button type="button" aria-label="Cerrar" onClick={onClose} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+      <div className="relative z-10 w-full max-w-[420px] rounded-t-3xl border border-white/10 bg-[var(--app-bg)] p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] shadow-2xl shadow-black/60 sm:rounded-3xl">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Nota de {activeProfile}</p>
+            <p className="truncate text-lg font-semibold">{title.title}</p>
+          </div>
+          <button type="button" onClick={onClose} className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/8 text-[var(--text-soft)]" aria-label="Cerrar">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="grid grid-cols-5 gap-2">
+          {Array.from({ length: 10 }, (_, index) => index + 1).map((rating) => (
+            <button
+              key={rating}
+              type="button"
+              onClick={() => onPick(rating)}
+              className={`h-12 rounded-xl text-base font-black transition ${
+                current === rating ? "bg-[var(--gold)] text-black" : "bg-white/8 text-[var(--text-soft)] hover:bg-white/14"
+              }`}
+            >
+              {rating}
+            </button>
+          ))}
+        </div>
+        {current != null && (
+          <button type="button" onClick={() => onPick(null)} className="mt-3 w-full rounded-xl border border-white/10 bg-white/6 py-2.5 text-sm font-semibold text-[var(--text-soft)]">
+            Quitar nota
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function NotaButton({
+  title,
+  activeProfile,
+  openRating,
+  compact = false,
+}: {
+  title: CineTitle;
+  activeProfile: ProfileKey;
+  openRating: (title: CineTitle) => void;
+  compact?: boolean;
+}) {
+  const value = title.personal[activeProfile].rating;
+  if (compact) {
+    return (
+      <button
+        type="button"
+        onClick={() => openRating(title)}
+        aria-label="Poner nota"
+        className={`grid h-11 w-11 place-items-center rounded-xl text-sm font-black transition ${
+          value ? "bg-[var(--gold)] text-black" : "bg-white/8 text-[var(--text-soft)] hover:bg-white/14"
+        }`}
+      >
+        {value ?? <Star size={18} />}
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => openRating(title)}
+      className="flex w-full items-center justify-center gap-2 rounded-xl bg-black/24 py-2.5 text-sm font-semibold text-[var(--text-soft)] transition hover:bg-black/40"
+    >
+      <Star size={17} className={value ? "text-[var(--gold)]" : ""} />
+      {value ? `Tu nota: ${value}/10` : `Poner nota (${activeProfile})`}
+    </button>
   );
 }
 
@@ -507,10 +615,10 @@ function HomeView({
   setSelectedTitleId,
   setActiveTab,
   markWatched,
-  updateRating,
   activeProfile,
   updatePendingCategory,
-  openDetail
+  openDetail,
+  openRating
 }: {
   titles: CineTitle[];
   selectedTitle: CineTitle;
@@ -518,10 +626,10 @@ function HomeView({
   setSelectedTitleId: (id: string) => void;
   setActiveTab: (tab: TabKey) => void;
   markWatched: (titleId: string, scope: "me" | "both") => void;
-  updateRating: (titleId: string, profile: ProfileKey, rating: number | null) => void;
   activeProfile: ProfileKey;
   updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
   openDetail: (title: CineTitle) => void;
+  openRating: (title: CineTitle) => void;
 }) {
   const unwatchedTogether = titles.filter(
     (title) => title.personal.RR.status !== "watched" && title.personal.LB.status !== "watched"
@@ -533,9 +641,9 @@ function HomeView({
         title={selectedTitle}
         activeProfile={activeProfile}
         markWatched={markWatched}
-        updateRating={updateRating}
         updatePendingCategory={updatePendingCategory}
         openDetail={openDetail}
+        openRating={openRating}
       />
 
       <div className="grid grid-cols-3 gap-2">
@@ -581,21 +689,21 @@ function ExploreView({
   filters,
   setFilters,
   setSelectedTitleId,
-  updateRating,
   markWatched,
   activeProfile,
   updatePendingCategory,
-  openDetail
+  openDetail,
+  openRating
 }: {
   titles: CineTitle[];
   filters: Filters;
   setFilters: React.Dispatch<React.SetStateAction<Filters>>;
   setSelectedTitleId: (id: string) => void;
-  updateRating: (titleId: string, profile: ProfileKey, rating: number | null) => void;
   markWatched: (titleId: string, scope: "me" | "both") => void;
   activeProfile: ProfileKey;
   updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
   openDetail: (title: CineTitle) => void;
+  openRating: (title: CineTitle) => void;
 }) {
   return (
     <div className="space-y-4">
@@ -695,7 +803,6 @@ function ExploreView({
           >
             <option value="tmdb">Nota TMDB</option>
             <option value="imdb">Nota IMDb</option>
-            <option value="rt">Rotten Tomatoes</option>
             <option value="metacritic">Metacritic</option>
           </SelectField>
           <label className="block rounded-xl bg-black/24 px-3 py-2">
@@ -722,10 +829,10 @@ function ExploreView({
             title={title}
             onSelect={() => setSelectedTitleId(title.id)}
             activeProfile={activeProfile}
-            updateRating={updateRating}
             markWatched={markWatched}
             updatePendingCategory={updatePendingCategory}
             openDetail={openDetail}
+            openRating={openRating}
           />
         ))}
       </div>
@@ -747,7 +854,9 @@ function TodayView({
   openDetail: (title: CineTitle) => void;
 }) {
   const [scope, setScope] = useState<TodayScope>("both");
+  const [kind, setKind] = useState<"all" | MediaKind>("all");
   const [maxMinutes, setMaxMinutes] = useState(0);
+  const [minScore, setMinScore] = useState(0);
   const [selectedProviders, setSelectedProviders] = useState<ProviderKey[]>([]);
   const [genre, setGenre] = useState("");
   const [seed, setSeed] = useState(0);
@@ -767,8 +876,10 @@ function TodayView({
         ? title.personal.RR.status !== "watched" && title.personal.LB.status !== "watched"
         : title.personal[activeProfile].status !== "watched";
       if (!unseen) return false;
+      if (kind !== "all" && title.kind !== kind) return false;
       if (selectedProviders.length && !selectedProviders.some((p) => title.availability.some((a) => a.provider === p))) return false;
       if (maxMinutes > 0 && title.runtimeMinutes && title.runtimeMinutes > maxMinutes) return false;
+      if (minScore > 0 && blendedScore(title) < minScore) return false;
       if (genre && !title.genres.includes(genre)) return false;
       return true;
     });
@@ -787,7 +898,7 @@ function TodayView({
       })
       .sort((left, right) => right.score - left.score)
       .slice(0, 5);
-  }, [titles, scope, activeProfile, selectedProviders, maxMinutes, genre, seed, affinityRR, affinityLB]);
+  }, [titles, scope, kind, activeProfile, selectedProviders, maxMinutes, minScore, genre, seed, affinityRR, affinityLB]);
 
   return (
     <div className="space-y-4">
@@ -801,6 +912,12 @@ function TodayView({
           <button type="button" onClick={() => setScope("me")} aria-pressed={scope === "me"} className={`h-10 rounded-xl text-sm font-bold transition ${scope === "me" ? "bg-[var(--gold)] text-black" : "text-[var(--text-soft)]"}`}>
             Solo {activeProfile}
           </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <FilterChip active={kind === "all"} onClick={() => setKind("all")}>Todo</FilterChip>
+          <FilterChip active={kind === "movie"} onClick={() => setKind("movie")}>Pelis</FilterChip>
+          <FilterChip active={kind === "series"} onClick={() => setKind("series")}>Series</FilterChip>
         </div>
 
         <div className="space-y-2 rounded-xl bg-black/24 p-2">
@@ -830,6 +947,13 @@ function TodayView({
             Tiempo disponible <strong className="text-[var(--text-main)]">{maxMinutes ? formatRuntime(maxMinutes) : "Cualquiera"}</strong>
           </span>
           <input type="range" min="0" max="210" step="15" value={maxMinutes} onChange={(event) => setMaxMinutes(Number(event.target.value))} className="w-full accent-[var(--gold)]" />
+        </label>
+
+        <label className="block rounded-xl bg-black/24 px-3 py-2">
+          <span className="mb-1 flex items-center justify-between text-xs text-[var(--muted)]">
+            Nota minima <strong className="text-[var(--text-main)]">{minScore ? `${minScore}/10` : "Cualquiera"}</strong>
+          </span>
+          <input type="range" min="0" max="10" step="1" value={minScore} onChange={(event) => setMinScore(Number(event.target.value))} className="w-full accent-[var(--gold)]" />
         </label>
 
         <button type="button" onClick={() => setSeed((value) => value + 1)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--gold)] py-3 text-sm font-bold text-black">
@@ -909,13 +1033,18 @@ function PendingView({
 function RatingsView({ titles }: { titles: CineTitle[] }) {
   const rated = titles
     .filter((title) => title.personal.RR.rating || title.personal.LB.rating)
-    .map((title) => ({
-      title,
-      rr: title.personal.RR.rating,
-      lb: title.personal.LB.rating,
-      gap: Math.abs((title.personal.RR.rating ?? 0) - (title.personal.LB.rating ?? 0))
-    }))
-    .sort((left, right) => ((right.rr ?? 0) + (right.lb ?? 0)) / 2 - ((left.rr ?? 0) + (left.lb ?? 0)) / 2);
+    .map((title) => {
+      const rr = title.personal.RR.rating;
+      const lb = title.personal.LB.rating;
+      return {
+        title,
+        rr,
+        lb,
+        average: coupleRating(title) ?? 0,
+        gap: rr && lb ? Math.abs(rr - lb) : null,
+      };
+    })
+    .sort((left, right) => right.average - left.average);
 
   return (
     <div className="space-y-4">
@@ -930,7 +1059,7 @@ function RatingsView({ titles }: { titles: CineTitle[] }) {
             <Poster title={title} size="small" />
             <div className="min-w-0 flex-1">
               <p className="truncate font-semibold">{title.title}</p>
-              <p className="text-sm text-[var(--muted)]">Diferencia: {gap}</p>
+              <p className="text-sm text-[var(--muted)]">{gap === null ? "Solo un voto" : `Diferencia: ${gap}`}</p>
             </div>
             <div className="grid grid-cols-2 gap-1 text-center">
               <MiniScore label="RR" value={rr} />
@@ -947,16 +1076,16 @@ function HeroTitle({
   title,
   activeProfile,
   markWatched,
-  updateRating,
   updatePendingCategory,
-  openDetail
+  openDetail,
+  openRating
 }: {
   title: CineTitle;
   activeProfile: ProfileKey;
   markWatched: (titleId: string, scope: "me" | "both") => void;
-  updateRating: (titleId: string, profile: ProfileKey, rating: number | null) => void;
   updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
   openDetail: (title: CineTitle) => void;
+  openRating: (title: CineTitle) => void;
 }) {
   return (
     <article className="overflow-hidden rounded-2xl border border-white/10 bg-white/7 shadow-xl shadow-black/25">
@@ -1008,11 +1137,7 @@ function HeroTitle({
             Vista ambos
           </button>
         </div>
-        <RatingPicker
-          activeProfile={activeProfile}
-          value={title.personal[activeProfile].rating}
-          onChange={(rating) => updateRating(title.id, activeProfile, rating)}
-        />
+        <NotaButton title={title} activeProfile={activeProfile} openRating={openRating} />
         <PendingCategoryControls title={title} updatePendingCategory={updatePendingCategory} />
       </div>
     </article>
@@ -1025,7 +1150,7 @@ function TitleDetailSheet({
   activeProfile,
   onClose,
   markWatched,
-  updateRating,
+  openRating,
   updatePendingCategory
 }: {
   title: CineTitle;
@@ -1033,7 +1158,7 @@ function TitleDetailSheet({
   activeProfile: ProfileKey;
   onClose: () => void;
   markWatched: (titleId: string, scope: "me" | "both") => void;
-  updateRating: (titleId: string, profile: ProfileKey, rating: number | null) => void;
+  openRating: (title: CineTitle) => void;
   updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
 }) {
   const [detail, setDetail] = useState<TitleDetail | null>(null);
@@ -1179,11 +1304,7 @@ function TitleDetailSheet({
               Vista ambos
             </button>
           </div>
-          <RatingPicker
-            activeProfile={activeProfile}
-            value={title.personal[activeProfile].rating}
-            onChange={(rating) => updateRating(title.id, activeProfile, rating)}
-          />
+          <NotaButton title={title} activeProfile={activeProfile} openRating={openRating} />
           <PendingCategoryControls title={title} updatePendingCategory={updatePendingCategory} />
         </div>
       </div>
@@ -1195,19 +1316,21 @@ function TitleCard({
   title,
   onSelect,
   activeProfile,
-  updateRating,
   markWatched,
   updatePendingCategory,
-  openDetail
+  openDetail,
+  openRating
 }: {
   title: CineTitle;
   onSelect: () => void;
   activeProfile: ProfileKey;
-  updateRating: (titleId: string, profile: ProfileKey, rating: number | null) => void;
   markWatched: (titleId: string, scope: "me" | "both") => void;
   updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
   openDetail: (title: CineTitle) => void;
+  openRating: (title: CineTitle) => void;
 }) {
+  const isPending = title.pendingCategories.includes("Para ver juntos");
+  const bothWatched = title.personal.RR.status === "watched" && title.personal.LB.status === "watched";
   return (
     <article className="rounded-2xl border border-white/8 bg-white/6 p-3">
       <button type="button" onClick={onSelect} className="flex w-full gap-3 text-left">
@@ -1223,31 +1346,38 @@ function TitleCard({
               {(title.imdbRating ?? title.tmdbRating)?.toFixed(1) ?? "-"}
             </span>
           </div>
-          <div className="mt-2 flex flex-wrap gap-1.5">
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
             {title.availability.map((item) => (
               <ProviderBadge key={`${title.id}-${item.provider}-${item.type}`} provider={item.provider} type={item.type} compact />
             ))}
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <MiniScore label="RR" value={title.personal.RR.rating} />
-            <MiniScore label="LB" value={title.personal.LB.rating} />
+            {(title.personal.RR.rating || title.personal.LB.rating) && (
+              <span className="ml-auto flex items-center gap-1.5 text-[11px] font-bold text-[var(--muted)]">
+                {title.personal.RR.rating && <span>RR {title.personal.RR.rating}</span>}
+                {title.personal.LB.rating && <span>LB {title.personal.LB.rating}</span>}
+              </span>
+            )}
           </div>
         </div>
       </button>
-      <div className="mt-3 grid grid-cols-[1fr_auto_auto_auto] gap-2">
-        <RatingPicker
-          activeProfile={activeProfile}
-          value={title.personal[activeProfile].rating}
-          onChange={(rating) => updateRating(title.id, activeProfile, rating)}
-          compact
-        />
+      <div className="mt-3 flex items-center gap-2">
+        <NotaButton title={title} activeProfile={activeProfile} openRating={openRating} compact />
         <button type="button" onClick={() => openDetail(title)} className="icon-action" aria-label="Ver ficha">
           <Info size={18} />
         </button>
-        <button type="button" onClick={() => updatePendingCategory(title.id, "Para ver juntos", title.pendingCategories.includes("Para ver juntos") ? "remove" : "add")} className={`icon-action ${title.pendingCategories.includes("Para ver juntos") ? "action-button-done" : ""}`} aria-label="Pendiente para ver juntos">
+        <button
+          type="button"
+          onClick={() => updatePendingCategory(title.id, "Para ver juntos", isPending ? "remove" : "add")}
+          className={`icon-action ${isPending ? "action-button-done" : ""}`}
+          aria-label="Pendiente para ver juntos"
+        >
           <BookmarkPlus size={18} />
         </button>
-        <button type="button" onClick={() => markWatched(title.id, "both")} className="icon-action" aria-label="Vista por ambos">
+        <button
+          type="button"
+          onClick={() => markWatched(title.id, "both")}
+          className={`icon-action ml-auto ${bothWatched ? "action-button-done" : ""}`}
+          aria-label="Vista por ambos"
+        >
           <Users size={18} />
         </button>
       </div>
@@ -1338,8 +1468,17 @@ function RatingStrip({ title }: { title: CineTitle }) {
     <div className="grid grid-cols-4 gap-2">
       <Metric label="TMDB" value={title.tmdbRating?.toFixed(1) ?? "-"} />
       <Metric label="IMDb" value={title.imdbRating?.toFixed(1) ?? "-"} />
-      <Metric label="RT" value={title.rtTomatometer != null ? `${title.rtTomatometer}%` : "-"} />
       <Metric label="Metacritic" value={title.metascore != null ? `${title.metascore}` : "-"} />
+      <a
+        href={rottenTomatoesSearch(title)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex min-h-20 flex-col items-center justify-center rounded-xl border border-white/8 bg-white/6 p-3 transition hover:bg-white/12"
+        aria-label="Buscar en Rotten Tomatoes"
+      >
+        <span className="text-2xl leading-none">🍅</span>
+        <span className="mt-1 text-[10px] text-[var(--muted)]">Rotten T.</span>
+      </a>
     </div>
   );
 }
@@ -1396,44 +1535,6 @@ function PendingCategoryControls({
     </div>
   );
 }
-function RatingPicker({
-  activeProfile,
-  value,
-  onChange,
-  compact = false
-}: {
-  activeProfile: ProfileKey;
-  value?: number;
-  onChange: (rating: number | null) => void;
-  compact?: boolean;
-}) {
-  return (
-    <div className={`rounded-xl bg-black/24 p-2 ${compact ? "" : "space-y-2"}`}>
-      {!compact && (
-        <div className="flex items-center justify-between text-xs text-[var(--muted)]">
-          <span>Nota de {activeProfile}</span>
-          <strong className="text-[var(--text-main)]">{value ? `${value}/10` : "Sin nota"}</strong>
-        </div>
-      )}
-      <div className="grid grid-cols-10 gap-1">
-        {Array.from({ length: 10 }, (_, index) => index + 1).map((rating) => (
-          <button
-            key={rating}
-            type="button"
-            onClick={() => onChange(value === rating ? null : rating)}
-            aria-label={value === rating ? `Quitar ${rating}` : `Poner ${rating}`}
-            className={`h-8 rounded-md text-xs font-bold transition ${
-              value === rating ? "bg-[var(--gold)] text-black" : "bg-white/8 text-[var(--text-soft)] hover:bg-white/14"
-            }`}
-          >
-            {rating}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function ProviderBadge({
   provider,
   type,
@@ -1455,7 +1556,7 @@ function ProviderBadge({
         style={{ backgroundColor: providerData?.accent ?? "var(--gold)" }}
       />
       {providerData?.shortName ?? provider}
-      <span className="text-[var(--muted)]">{monetizationLabels[type]}</span>
+      {type !== "included" && <span className="text-[var(--muted)]">{monetizationLabels[type]}</span>}
     </span>
   );
 }
@@ -1603,8 +1704,15 @@ function formatRuntime(minutes: number) {
 function scoreForSource(title: CineTitle, source: RatingSource): number | undefined {
   if (source === "tmdb") return title.tmdbRating;
   if (source === "imdb") return title.imdbRating;
-  if (source === "rt") return title.rtTomatometer != null ? title.rtTomatometer / 10 : undefined;
   return title.metascore != null ? title.metascore / 10 : undefined;
+}
+
+// Couple rating: average only when both voted; otherwise the single vote we have.
+function coupleRating(title: CineTitle): number | undefined {
+  const rr = title.personal.RR.rating;
+  const lb = title.personal.LB.rating;
+  if (rr && lb) return (rr + lb) / 2;
+  return rr ?? lb ?? undefined;
 }
 
 function passesWatchFilter(title: CineTitle, watch: WatchFilter, activeProfile: ProfileKey): boolean {
