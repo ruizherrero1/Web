@@ -156,11 +156,9 @@ export function CineApp({ currentProfile, accessToken }: { currentProfile?: Prof
   }, [accessToken]);
 
   useEffect(() => {
-    // CineApp only renders on the client (after login), so registering the service
-    // worker and reading navigator here cannot cause an SSR hydration mismatch.
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/cine-sw.js", { scope: "/apps/cine" }).catch(() => {});
-    }
+    // PWA offline is on hold: we no longer register a service worker (a stale SW
+    // cache was breaking hydration after deploys). We still track online status
+    // and the offline write queue for user feedback.
     const refreshPending = () => setPendingWrites(getPendingCount());
     const goOnline = () => setOnline(true);
     const goOffline = () => setOnline(false);
