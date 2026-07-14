@@ -17,6 +17,16 @@ type AuthGateProps = {
 };
 
 const isLocalPreviewAllowed = process.env.NODE_ENV !== "production";
+
+// Guard against a login call hanging forever (e.g. a proxy/VPN that swallows the
+// Supabase request) so the "Entrando..." button always resolves.
+function withTimeout<T>(promise: PromiseLike<T>, ms = 12000): Promise<T> {
+  return Promise.race([
+    Promise.resolve(promise),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error("auth-timeout")), ms)),
+  ]);
+}
+
 const cineUsers = [
   { email: "ruizherrero1@gmail.com", initials: "RR" },
   { email: "laura.badia.s94@gmail.com", initials: "LB" },
@@ -116,11 +126,13 @@ export function AuthGate({ children }: AuthGateProps) {
 
     try {
       if (!hasPrivateAccess) {
-        const accessResponse = await fetch("/api/cine/pass", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ password }),
-        });
+        const accessResponse = await withTimeout(
+          fetch("/api/cine/pass", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password }),
+          })
+        );
         if (!accessResponse.ok) {
           setErrorMessage("Clave de Cine incorrecta.");
           return;
@@ -129,10 +141,16 @@ export function AuthGate({ children }: AuthGateProps) {
       }
 
       const supabase = createClient();
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await withTimeout(supabase.auth.signInWithPassword({ email, password }));
       if (error) setErrorMessage("No se pudo iniciar sesion con esos datos.");
-    } catch {
-      setErrorMessage("Supabase no esta configurado todavia.");
+    } catch (err) {
+      // Never leave the button stuck on "Entrando...": on a timeout or network
+      // failure (e.g. a corporate proxy/VPN blocking Supabase) show a clear hint.
+      setErrorMessage(
+        err instanceof Error && err.message === "auth-timeout"
+          ? "El servidor tardo demasiado. Revisa tu conexion (proxy/VPN de tu red) e intenta de nuevo."
+          : "No se pudo iniciar sesion. Intenta de nuevo."
+      );
     } finally {
       setSubmitting(false);
     }
