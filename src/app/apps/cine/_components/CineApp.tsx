@@ -779,17 +779,18 @@ function HomeView({
         openRating={openRating}
       />
 
-      {shelves.unwatchedTogether.length > 0 && (
-        <>
-          <SectionHeader icon={Sparkles} title="Para decidir hoy" action="Buscar" onAction={() => setActiveTab("explore")} />
-          <HorizontalShelf titles={shelves.unwatchedTogether} onSelect={openShelfTitle} />
-        </>
-      )}
-
+      {/* Their stated flow: first the couple's own list, then browsing. */}
       {shelves.paraVerJuntos.length > 0 && (
         <>
           <SectionHeader icon={Users} title="Para ver juntos" action="Pendientes" onAction={() => setActiveTab("pending")} />
           <HorizontalShelf titles={shelves.paraVerJuntos} onSelect={openShelfTitle} />
+        </>
+      )}
+
+      {shelves.unwatchedTogether.length > 0 && (
+        <>
+          <SectionHeader icon={Sparkles} title="Para decidir hoy" action="Buscar" onAction={() => setActiveTab("explore")} />
+          <HorizontalShelf titles={shelves.unwatchedTogether} onSelect={openShelfTitle} />
         </>
       )}
 
@@ -1723,7 +1724,20 @@ function HorizontalShelf({
         >
           <Poster title={title} size="shelf" />
           <p className="mt-2 line-clamp-2 text-sm font-semibold leading-5">{title.title}</p>
-          <p className="text-xs text-[var(--muted)]">TMDB {title.tmdbRating?.toFixed(1) ?? "-"}</p>
+          <p className="flex items-center gap-1.5 text-xs text-[var(--muted)]">
+            <span>TMDB {title.tmdbRating?.toFixed(1) ?? "-"}</span>
+            {title.availability.slice(0, 4).map((item) => {
+              const data = providers.find((p) => p.key === item.provider);
+              return (
+                <span
+                  key={`${title.id}-${item.provider}`}
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: data?.accent ?? "var(--gold)" }}
+                  title={data?.name ?? item.provider}
+                />
+              );
+            })}
+          </p>
         </button>
       ))}
     </div>
