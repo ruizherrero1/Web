@@ -5,7 +5,9 @@ import { loadTmdbCatalogForSync, type TmdbCatalogTitle } from "./_tmdb";
 // Shared Cine catalog sync so both the user-triggered route (/api/cine/sync) and the
 // scheduled cron route (/api/cine/cron/sync) run the exact same pipeline.
 
-const chunkSize = 100;
+// 400-row chunks keep DB round-trips low enough for a 5000+ title import to fit
+// in the serverless budget while staying under PostgREST payload limits.
+const chunkSize = 400;
 
 export type RatingsResult = { attempted: number; updated: number; skipped: boolean };
 
@@ -18,7 +20,7 @@ export type CatalogSyncResult = {
 
 export function getPagesPerProvider() {
   const configured = Number(process.env.CINE_TMDB_PAGES_PER_PROVIDER ?? 20);
-  return Number.isFinite(configured) ? Math.min(Math.max(configured, 1), 40) : 20;
+  return Number.isFinite(configured) ? Math.min(Math.max(configured, 1), 50) : 20;
 }
 
 // Full pipeline: import from TMDB, refresh availability, migrate legacy marks and enrich ratings.
@@ -123,35 +125,44 @@ async function enrichRatingsFromOmdb(supabase: SupabaseClient): Promise<RatingsR
   let attempted = 0;
   let updated = 0;
   const now = new Date().toISOString();
+  const enrichConcurrency = 8;
+  const list = (titles ?? []) as EnrichableTitle[];
 
-  for (const title of (titles ?? []) as EnrichableTitle[]) {
-    attempted += 1;
-    try {
-      const ratings = await fetchOmdbRatings({
-        title: title.title,
-        year: title.release_year,
-        kind: title.media_type,
-        imdbId: title.imdb_id,
-      });
+  // Enrich in parallel waves: 150 sequential OMDb calls would eat the whole
+  // 60s serverless budget on their own.
+  for (let index = 0; index < list.length; index += enrichConcurrency) {
+    const wave = list.slice(index, index + enrichConcurrency);
+    await Promise.all(
+      wave.map(async (title) => {
+        attempted += 1;
+        try {
+          const ratings = await fetchOmdbRatings({
+            title: title.title,
+            year: title.release_year,
+            kind: title.media_type,
+            imdbId: title.imdb_id,
+          });
 
-      // Always stamp the freshness so a missing title rotates to the back of the queue
-      // instead of being retried on every sync.
-      const patch: Record<string, unknown> = { ratings_updated_at: now, updated_at: now };
-      if (ratings) {
-        if (ratings.imdbId) patch.imdb_id = ratings.imdbId;
-        if (ratings.imdbRating !== null) patch.imdb_rating = ratings.imdbRating;
-        if (ratings.imdbVotes !== null) patch.imdb_votes = ratings.imdbVotes;
-        // Rotten Tomatoes is now shown as a link to their site, not stored as a score.
-        if (ratings.metascore !== null) patch.metascore = ratings.metascore;
-        if (ratings.runtimeMinutes !== null) patch.runtime_minutes = ratings.runtimeMinutes;
-      }
+          // Always stamp the freshness so a missing title rotates to the back of
+          // the queue instead of being retried on every sync.
+          const patch: Record<string, unknown> = { ratings_updated_at: now, updated_at: now };
+          if (ratings) {
+            if (ratings.imdbId) patch.imdb_id = ratings.imdbId;
+            if (ratings.imdbRating !== null) patch.imdb_rating = ratings.imdbRating;
+            if (ratings.imdbVotes !== null) patch.imdb_votes = ratings.imdbVotes;
+            // Rotten Tomatoes is shown as a link to their site, not stored as a score.
+            if (ratings.metascore !== null) patch.metascore = ratings.metascore;
+            if (ratings.runtimeMinutes !== null) patch.runtime_minutes = ratings.runtimeMinutes;
+          }
 
-      const { error: updateError } = await supabase.from("cine_titles").update(patch).eq("id", title.id);
-      if (updateError) throw updateError;
-      if (ratings) updated += 1;
-    } catch {
-      // OMDb quota or a single-title miss should not block the catalog sync.
-    }
+          const { error: updateError } = await supabase.from("cine_titles").update(patch).eq("id", title.id);
+          if (updateError) throw updateError;
+          if (ratings) updated += 1;
+        } catch {
+          // OMDb quota or a single-title miss should not block the catalog sync.
+        }
+      })
+    );
   }
 
   return { attempted, updated, skipped: false };

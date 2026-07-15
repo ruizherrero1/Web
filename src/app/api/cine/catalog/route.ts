@@ -125,7 +125,10 @@ function mapTitles(
       genres: (title.genres ?? []).map(cleanText),
       posterPath: title.poster_path,
       backdropPath: title.backdrop_path ?? "",
-      overview: cleanText(title.overview ?? ""),
+      // Trimmed for payload size: the hero clamps to 3 lines and the detail
+      // sheet fetches the full overview from TMDB. With 5000+ titles the full
+      // texts would dominate the catalog response.
+      overview: truncate(cleanText(title.overview ?? ""), 300),
       runtimeMinutes: title.runtime_minutes ?? undefined,
       imdbId: title.imdb_id ?? undefined,
       tmdbRating: Number(title.tmdb_vote ?? 0) || undefined,
@@ -174,6 +177,11 @@ function groupBy<T>(items: T[], getKey: (item: T) => string) {
 
 function unique<T>(items: T[]) {
   return [...new Set(items)];
+}
+
+function truncate(value: string, max: number) {
+  if (value.length <= max) return value;
+  return `${value.slice(0, max).trimEnd()}...`;
 }
 
 function cleanText(value?: string) {
