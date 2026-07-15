@@ -104,7 +104,7 @@ Configuradas en Vercel:
 - `TMDB_API_KEY` (o `TMDB_ACCESS_TOKEN`; el codigo prefiere el token bearer si existe)
 - `CINE_SHARED_PASSWORD`
 - `CINE_COOKIE_SECRET` (importante: sin este, la cookie se deriva de la propia password)
-- `CINE_TMDB_PAGES_PER_PROVIDER`
+- `CINE_TMDB_PAGES_PER_PROVIDER` (40 en Production desde 2026-07-15)
 - `OMDB_API_KEY`
 - `CINE_OMDB_SYNC_LIMIT`
 - `CRON_SECRET`
@@ -133,8 +133,8 @@ El catalogo no debe pedir TMDB en cada carga de usuario. El flujo correcto es:
 
 Estado conocido:
 
-- El catalogo importo 1228 titulos en produccion el 2026-07-13.
-- Tras la migracion `search_titles`, la sincronizacion final dejo `searchTitles` poblado en los 1228 titulos.
+- El catalogo importo 6777 titulos en produccion el 2026-07-15 con `CINE_TMDB_PAGES_PER_PROVIDER=40`.
+- La sincronizacion de 2026-07-15 pidio 800 paginas TMDB y completo en ~40s; OMDb intento 150 titulos y actualizo 140.
 
 ## UX actual
 

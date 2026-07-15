@@ -26,9 +26,9 @@ Produccion:
 
 Catalogo:
 
-- Importacion previa: 1228 titulos en produccion el 2026-07-13.
+- Importacion actual: 6777 titulos en produccion el 2026-07-15 (`CINE_TMDB_PAGES_PER_PROVIDER=40`).
 - Se anadio campo `search_titles` para buscar en ingles y espanol.
-- La sincronizacion final del 2026-07-13 dejo 1228/1228 titulos con `searchTitles` poblado.
+- La sincronizacion del 2026-07-15 dejo el catalogo ampliado a 6777 titulos; `searchTitles` sigue poblado para busqueda ingles/espanol.
 
 Notas externas (OMDb):
 
@@ -209,6 +209,15 @@ Ratings externos:
 - `CINE_OMDB_SYNC_LIMIT` actualizado en Vercel Production de 40 a 150.
 - Redeploy de Production completado y alias `www.ramonruizherrero.com` listo.
 - Objetivo: acelerar IMDb/Metacritic/RT criticos para que el catalogo se complete en unas dos semanas con cron diario.
+
+
+### 2026-07-15 - TMDB pages a 40 y catalogo ampliado
+
+- `CINE_TMDB_PAGES_PER_PROVIDER` actualizado en Vercel Production de 20 a 40.
+- Redeploy de Production completado y alias `www.ramonruizherrero.com` listo.
+- Sync manual ejecutado: `titles=6777`, `requestedPages=800`, duracion ~39.6s.
+- OMDb en ese sync: `attempted=150`, `updated=140`, `skipped=false`.
+- Riesgo: la ruta tiene `maxDuration=60`; si TMDB/OMDb va lento, 40 paginas puede acercarse al timeout.
 
 ## Incidencias conocidas
 
