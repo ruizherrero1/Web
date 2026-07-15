@@ -1115,10 +1115,13 @@ function TodayView({
           scope === "both"
             ? consensusAffinity(title, affinityRR, affinityLB)
             : predictedAffinity(title, activeProfile === "RR" ? affinityRR : affinityLB);
-        const score = base * 0.6 + (consensus ?? base) * 0.4 + seededJitter(title.id, seed);
-        return { title, score };
+        const quality = base * 0.6 + (consensus ?? base) * 0.4;
+        // The jitter only shuffles the ORDER on "Otra ruleta"; the displayed
+        // score is the real quality, clamped to the 0-10 scale (it used to show
+        // impossible values like 10.7).
+        return { title, score: Math.min(10, quality), sortScore: quality + seededJitter(title.id, seed) };
       })
-      .sort((left, right) => right.score - left.score)
+      .sort((left, right) => right.sortScore - left.sortScore)
       .slice(0, 5);
   }, [titles, scope, kind, activeProfile, selectedProviders, maxMinutes, minScore, genre, seed, affinityRR, affinityLB]);
 
@@ -2201,14 +2204,18 @@ function consensusAffinity(title: CineTitle, affinityRR: Map<string, number>, af
   return Math.min(rr, lb);
 }
 
-// Blend of every available rating source on a 0-10 scale; unknown => neutral 5.
+// Blend of every available rating source on a 0-10 scale.
 function blendedScore(title: CineTitle) {
   const parts: number[] = [];
   if (title.imdbRating) parts.push(title.imdbRating);
-  if (title.tmdbRating) parts.push(title.tmdbRating);
+  // TMDB inflates obscure titles (a junk movie with 2 votes can show a 10),
+  // so only trust its score when there is a minimum of vote support.
+  if (title.tmdbRating && (title.imdbVotes ?? 0) >= 20) parts.push(title.tmdbRating);
   if (title.rtTomatometer != null) parts.push(title.rtTomatometer / 10);
   if (title.metascore != null) parts.push(title.metascore / 10);
-  if (!parts.length) return 5;
+  // No trustworthy signal: score slightly below average so unknowns don't
+  // outrank titles with real ratings.
+  if (!parts.length) return 4;
   return parts.reduce((sum, value) => sum + value, 0) / parts.length;
 }
 

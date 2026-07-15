@@ -55,6 +55,18 @@ export function AuthGate({ children }: AuthGateProps) {
       }
     }
     if (supabaseReady) void checkPrivateAccess();
+
+    // Preselect the last user who signed in on this device. Done in an effect
+    // (not a lazy initializer) because AuthGate renders on the server too and
+    // reading localStorage during render would cause a hydration mismatch.
+    try {
+      const lastUser = window.localStorage.getItem("cine-last-user");
+      const known = cineUsers.find((user) => user.email === lastUser);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time client-only preselection
+      if (known) setEmail(known.email);
+    } catch {
+      // localStorage unavailable: keep the default.
+    }
   }, [supabaseReady]);
 
   useEffect(() => {
@@ -64,8 +76,10 @@ export function AuthGate({ children }: AuthGateProps) {
 
     async function loadSession() {
       try {
+        // Generous timeout: a slow mobile network refreshing the token must not
+        // kick an already-signed-in user back to the login screen.
         const timeout = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("session-timeout")), 8000)
+          setTimeout(() => reject(new Error("session-timeout")), 20000)
         );
         const { data } = await Promise.race([supabase.auth.getSession(), timeout]);
         setSession(data.session);
@@ -148,7 +162,15 @@ export function AuthGate({ children }: AuthGateProps) {
 
       const supabase = createClient();
       const { error } = await withTimeout(supabase.auth.signInWithPassword({ email, password }));
-      if (error) setErrorMessage("No se pudo iniciar sesion con esos datos.");
+      if (error) {
+        setErrorMessage("No se pudo iniciar sesion con esos datos.");
+      } else {
+        try {
+          window.localStorage.setItem("cine-last-user", email);
+        } catch {
+          // localStorage unavailable: preselection just won't persist.
+        }
+      }
     } catch (err) {
       // Never leave the button stuck on "Entrando...": on a timeout or network
       // failure (e.g. a corporate proxy/VPN blocking Supabase) show a clear hint.
