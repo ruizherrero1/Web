@@ -40,6 +40,12 @@ export type TmdbCatalogTitle = {
 const movieGenres = new Map<number, string>();
 const tvGenres = new Map<number, string>();
 
+// Pages are fetched in parallel waves so a large import (40 pages x 5 providers
+// x 2 types x 2 languages = 800 requests) fits comfortably inside the 60s
+// serverless budget. TMDB tolerates ~40-50 req/s; waves of 8 page-pairs stay
+// well under that.
+const pageConcurrency = 8;
+
 export async function loadTmdbCatalogForSync(pagesPerProvider: number) {
   await loadGenres();
 
@@ -50,30 +56,50 @@ export async function loadTmdbCatalogForSync(pagesPerProvider: number) {
   for (const [provider, tmdbProviderId] of Object.entries(providerTmdbIds) as Array<[ProviderKey, number]>) {
     for (const mediaType of ["movie", "series"] as const) {
       const endpointType = mediaType === "movie" ? "movie" : "tv";
-      for (let page = 1; page <= pagesPerProvider; page += 1) {
-        requestedPages += 2;
-        const [englishResults, spanishResults] = await Promise.all([
-          tmdbDiscover(endpointType, tmdbProviderId, page, "en-US"),
-          tmdbDiscover(endpointType, tmdbProviderId, page, "es-ES"),
-        ]);
-        if (englishResults.length === 0 && spanishResults.length === 0) break;
+      let nextPage = 1;
+      let exhausted = false;
 
-        const spanishById = new Map(spanishResults.map((item) => [item.id, item]));
-        const allItems = new Map<number, TmdbItem>();
-        for (const item of englishResults) allItems.set(item.id, item);
-        for (const item of spanishResults) if (!allItems.has(item.id)) allItems.set(item.id, item);
+      while (!exhausted && nextPage <= pagesPerProvider) {
+        const wave: number[] = [];
+        while (wave.length < pageConcurrency && nextPage <= pagesPerProvider) {
+          wave.push(nextPage);
+          nextPage += 1;
+        }
 
-        for (const item of allItems.values()) {
-          if (!item.poster_path) continue;
-          const title = mapTmdbItem(item, spanishById.get(item.id), mediaType, provider, syncedAt);
-          const key = `${title.media_type}-${title.tmdb_id}`;
-          const existing = deduped.get(key);
-          if (existing) {
-            existing.availability = mergeAvailability(existing.availability, title.availability[0]);
-            existing.tmdb_popularity = Math.max(existing.tmdb_popularity, title.tmdb_popularity);
-            existing.search_titles = unique([...existing.search_titles, ...title.search_titles]);
-          } else {
-            deduped.set(key, title);
+        const results = await Promise.all(
+          wave.map(async (page) => {
+            const [englishResults, spanishResults] = await Promise.all([
+              tmdbDiscover(endpointType, tmdbProviderId, page, "en-US"),
+              tmdbDiscover(endpointType, tmdbProviderId, page, "es-ES"),
+            ]);
+            return { englishResults, spanishResults };
+          })
+        );
+        requestedPages += wave.length * 2;
+
+        for (const { englishResults, spanishResults } of results) {
+          if (englishResults.length === 0 && spanishResults.length === 0) {
+            exhausted = true;
+            continue;
+          }
+
+          const spanishById = new Map(spanishResults.map((item) => [item.id, item]));
+          const allItems = new Map<number, TmdbItem>();
+          for (const item of englishResults) allItems.set(item.id, item);
+          for (const item of spanishResults) if (!allItems.has(item.id)) allItems.set(item.id, item);
+
+          for (const item of allItems.values()) {
+            if (!item.poster_path) continue;
+            const title = mapTmdbItem(item, spanishById.get(item.id), mediaType, provider, syncedAt);
+            const key = `${title.media_type}-${title.tmdb_id}`;
+            const existing = deduped.get(key);
+            if (existing) {
+              existing.availability = mergeAvailability(existing.availability, title.availability[0]);
+              existing.tmdb_popularity = Math.max(existing.tmdb_popularity, title.tmdb_popularity);
+              existing.search_titles = unique([...existing.search_titles, ...title.search_titles]);
+            } else {
+              deduped.set(key, title);
+            }
           }
         }
       }
