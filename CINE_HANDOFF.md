@@ -1,6 +1,6 @@
 # Cine - handoff y bitacora para agentes
 
-Ultima actualizacion: 2026-07-13
+Ultima actualizacion: 2026-07-15
 
 Este fichero es para Codex y otras IAs que trabajen a la vez en Cine. Mantiene el estado operativo, decisiones recientes, pendientes y una checklist para evitar regresiones. No guardar secretos reales aqui.
 
@@ -34,7 +34,7 @@ Notas externas (OMDb):
 
 - Fuente activa para IMDb, Rotten Tomatoes (criticos), Metacritic y runtime real.
 - Requiere `OMDB_API_KEY` en Vercel. Se enriquece por lotes en cada sync (los mas obsoletos primero).
-- Con ~1228 titulos y free tier ~1000/dia, el catalogo tarda varios syncs en cubrirse. Los titulos sin datos muestran "-".
+- Con `CINE_OMDB_SYNC_LIMIT=150`, el catalogo deberia cubrirse en unas dos semanas con cron diario. Los titulos sin datos muestran "-".
 - La antigua integracion RapidAPI/Rotten Tomatoes se ha eliminado (devolvia demasiados `null`).
 
 ## Cambios recientes
@@ -199,9 +199,16 @@ Ratings externos:
 
 ### 2026-07-13 - Variables OMDb/cron en Vercel
 
-- Configuradas en Production: `OMDB_API_KEY`, `CINE_OMDB_SYNC_LIMIT=40`, `CRON_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`.
+- Configuradas en Production: `OMDB_API_KEY`, `CINE_OMDB_SYNC_LIMIT=150`, `CRON_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`.
 - `OMDB_API_KEY`, `CRON_SECRET` y `SUPABASE_SERVICE_ROLE_KEY` estan marcadas como Sensitive en Vercel.
 - No se guardo ningun valor real en el repo.
+
+
+### 2026-07-15 - OMDb sync limit a 150
+
+- `CINE_OMDB_SYNC_LIMIT` actualizado en Vercel Production de 40 a 150.
+- Redeploy de Production completado y alias `www.ramonruizherrero.com` listo.
+- Objetivo: acelerar IMDb/Metacritic/RT criticos para que el catalogo se complete en unas dos semanas con cron diario.
 
 ## Incidencias conocidas
 

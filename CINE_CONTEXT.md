@@ -1,6 +1,6 @@
 # Cine - contexto tecnico vivo
 
-Ultima actualizacion: 2026-07-13
+Ultima actualizacion: 2026-07-15
 
 Este fichero es la memoria estable de la app Cine. Debe actualizarse cuando cambie arquitectura, datos, despliegue, seguridad, APIs externas o flujo de usuario. No guardar secretos reales aqui.
 
@@ -85,7 +85,7 @@ OMDb (fuente de notas externas, activa):
 
 - Una sola llamada a OMDb devuelve nota IMDb, votos IMDb, Rotten Tomatoes (criticos), Metacritic y runtime real.
 - Requiere `OMDB_API_KEY` en Vercel. Free tier ~1000 req/dia.
-- `sync` enriquece por lotes (`CINE_OMDB_SYNC_LIMIT`, 40 por defecto) ordenando por `ratings_updated_at` (los mas obsoletos primero) para cubrir el catalogo en varias sincronizaciones sin agotar la cuota.
+- `sync` enriquece por lotes (`CINE_OMDB_SYNC_LIMIT`, 150 en Production) ordenando por `ratings_updated_at` (los mas obsoletos primero) para cubrir el catalogo en varias sincronizaciones sin agotar la cuota.
 - Cada titulo enriquecido guarda `imdb_id` para futuras consultas estables por id.
 - Sustituye a la antigua integracion RapidAPI/Rotten Tomatoes, que devolvia muchos `null` y se ha eliminado (`_ratings.ts`).
 
@@ -113,7 +113,7 @@ Configuradas en Vercel:
 Notas externas (OMDb):
 
 - `OMDB_API_KEY` (necesaria para poblar IMDb/RT/Metacritic/runtime)
-- `CINE_OMDB_SYNC_LIMIT` (opcional, titulos enriquecidos por sync; 40 por defecto, max 200)
+- `CINE_OMDB_SYNC_LIMIT` (opcional, titulos enriquecidos por sync; 150 en Production, max 200)
 
 Cron y sync automatico:
 
