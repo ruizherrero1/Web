@@ -152,6 +152,10 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   // True while the rating popup was auto-opened by marking a title watched.
   const autoRatingRef = useRef(false);
+  // Timestamp of the last optimistic write. A catalog fetch that STARTED before
+  // a write must not clobber it (e.g. mark a pending while the initial load is
+  // still in flight -> the stale snapshot made it "disappear" seconds later).
+  const lastWriteRef = useRef(0);
 
   const applyTheme = (next: CineThemeKey) => {
     setTheme(next);
@@ -164,6 +168,7 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
 
   const loadCatalog = async () => {
     if (!accessToken) return;
+    const startedAt = Date.now();
     setCatalogLoading(true);
     setCatalogError("");
     try {
@@ -172,6 +177,14 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? "No se pudo cargar el catalogo.");
+
+      // A write happened while this fetch was in flight: this snapshot is stale
+      // and applying it would erase the optimistic change. Refetch instead.
+      if (lastWriteRef.current > startedAt) {
+        setTimeout(() => void loadCatalog(), 300);
+        return;
+      }
+
       const nextTitles = (payload.titles ?? []) as CineTitle[];
       setTitles(nextTitles);
       setLastSyncedAt((payload.lastSyncedAt as string | null) ?? null);
@@ -282,6 +295,7 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
     state: { status?: WatchStatus; rating?: number | null; season?: number | null; episode?: number | null; scope?: "me" | "both" }
   ) => {
     if (!accessToken || !title.tmdbId) return;
+    lastWriteRef.current = Date.now();
     const body = { tmdbId: title.tmdbId, mediaType: title.kind, ...state };
 
     // Offline: keep the optimistic change and queue it to sync on reconnect.
@@ -336,6 +350,7 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
   const updatePendingCategory = async (titleId: string, category: PendingCategory, action: "add" | "remove") => {
     const currentTitle = titles.find((title) => title.id === titleId);
     if (!accessToken || !currentTitle?.tmdbId) return;
+    lastWriteRef.current = Date.now();
 
     setTitles((current) =>
       current.map((title) => {
