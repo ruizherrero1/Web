@@ -8,7 +8,9 @@ import {
   Dices,
   ExternalLink,
   Film,
+  Camera,
   Flame,
+  Heart,
   Home,
   Info,
   LogOut,
@@ -81,6 +83,9 @@ const metacriticSearch = (title: CineTitle) =>
 // Module-level (not render) so the roulette starts on a different draw each
 // time the app is opened, while staying deterministic within the session.
 const initialRouletteSeed = Math.floor(Math.random() * 1_000_000);
+
+// Match mode: per-title yes/no of each user. Both liking => match.
+type MatchVoteMap = Record<string, { RR?: boolean; LB?: boolean }>;
 
 // TV programs (reality, talk shows, news, soaps) and animation series are
 // filtered out of the whole app: not what this catalog is for. Titles the
@@ -169,6 +174,8 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
   const [detailTitle, setDetailTitle] = useState<CineTitle | null>(null);
   const [ratingFor, setRatingFor] = useState<CineTitle | null>(null);
   const [trendingKeys, setTrendingKeys] = useState<string[]>([]);
+  const [matchVotes, setMatchVotes] = useState<MatchVoteMap>({});
+  const [matchCelebration, setMatchCelebration] = useState<CineTitle | null>(null);
   const [online, setOnline] = useState(true);
   const [pendingWrites, setPendingWrites] = useState(0);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
@@ -251,6 +258,57 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
       }
     })();
   }, [accessToken]);
+
+  useEffect(() => {
+    if (!accessToken) return;
+    void (async () => {
+      try {
+        const response = await fetch("/api/cine/match", { headers: { Authorization: `Bearer ${accessToken}` } });
+        if (!response.ok) return;
+        const payload = await response.json();
+        const map: MatchVoteMap = {};
+        for (const vote of (payload.votes ?? []) as Array<{ titleId: string; liked: boolean; initials: ProfileKey | null }>) {
+          if (!vote.initials) continue;
+          map[vote.titleId] = { ...map[vote.titleId], [vote.initials]: vote.liked };
+        }
+        setMatchVotes(map);
+      } catch {
+        // Match votes are optional (feature off until its migration runs).
+      }
+    })();
+  }, [accessToken]);
+
+  const voteMatch = (title: CineTitle, liked: boolean) => {
+    if (!accessToken || !title.tmdbId) return;
+    const partner: ProfileKey = activeProfile === "RR" ? "LB" : "RR";
+    const partnerLiked = matchVotes[title.id]?.[partner] === true;
+
+    setMatchVotes((current) => ({ ...current, [title.id]: { ...current[title.id], [activeProfile]: liked } }));
+
+    void (async () => {
+      try {
+        const response = await fetch("/api/cine/match", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ tmdbId: title.tmdbId, mediaType: title.kind, liked }),
+        });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          setCatalogError(`No se pudo guardar el voto: ${payload?.error ?? `error ${response.status}`}`);
+        }
+      } catch {
+        setCatalogError("Sin conexion: el voto del match no se guardo.");
+      }
+    })();
+
+    // Both said yes: it's a match! Celebrate and pin it to "Para ver juntos".
+    if (liked && partnerLiked) {
+      setMatchCelebration(title);
+      if (!title.pendingCategories.includes("Para ver juntos")) {
+        void updatePendingCategory(title.id, "Para ver juntos", "add");
+      }
+    }
+  };
 
   useEffect(() => {
     if (!accessToken) return;
@@ -623,7 +681,13 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
             />
           )}
           {activeTab === "today" && (
-            <TodayView titles={titles} activeProfile={activeProfile} openDetail={setDetailTitle} />
+            <TodayView
+              titles={titles}
+              activeProfile={activeProfile}
+              openDetail={setDetailTitle}
+              matchVotes={matchVotes}
+              voteMatch={voteMatch}
+            />
           )}
           {activeTab === "pending" && (
             <PendingView titles={pendingTitles} openDetail={setDetailTitle} updatePendingCategory={updatePendingCategory} />
@@ -692,6 +756,34 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
           updatePendingCategory={updatePendingCategory}
           updateProgress={updateProgress}
         />
+      )}
+      {matchCelebration && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center px-6">
+          <button type="button" aria-label="Cerrar" onClick={() => setMatchCelebration(null)} className="absolute inset-0 bg-black/75 backdrop-blur-sm" />
+          <div className="relative z-10 w-full max-w-[340px] rounded-3xl border border-[var(--gold)]/40 bg-[var(--app-bg)] p-6 text-center shadow-2xl shadow-black/60">
+            <p className="text-4xl">🎉</p>
+            <p className="mt-2 text-2xl font-black text-[var(--gold)]">¡MATCH!</p>
+            <p className="mt-1 text-sm text-[var(--text-soft)]">A los dos os apetece ver</p>
+            <p className="mt-2 text-lg font-semibold">{matchCelebration.title}</p>
+            <p className="mt-1 text-xs text-[var(--muted)]">Anadida a &quot;Para ver juntos&quot;</p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setMatchCelebration(null)}
+                className="rounded-xl bg-white/8 py-2.5 text-sm font-semibold text-[var(--text-soft)]"
+              >
+                Seguir
+              </button>
+              <button
+                type="button"
+                onClick={() => { setDetailTitle(matchCelebration); setMatchCelebration(null); }}
+                className="rounded-xl bg-[var(--gold)] py-2.5 text-sm font-bold text-black"
+              >
+                Ver ficha
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {themePickerOpen && (
         <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center">
@@ -871,8 +963,10 @@ function HomeView({
     const unseenSorted = titles
       .filter((title) => title.personal.RR.status !== "watched" && title.personal.LB.status !== "watched")
       .sort((a, b) => blendedScore(b) - blendedScore(a) || b.tmdbPopularity - a.tmdbPopularity);
-    const pelisHoy = unseenSorted.filter((title) => title.kind === "movie").slice(0, 40);
-    const seriesHoy = unseenSorted.filter((title) => title.kind === "series").slice(0, 40);
+    const isDocumentary = (title: CineTitle) => title.genres.some((g) => normalizeText(g) === "documental");
+    const pelisHoy = unseenSorted.filter((title) => title.kind === "movie" && !isDocumentary(title)).slice(0, 40);
+    const seriesHoy = unseenSorted.filter((title) => title.kind === "series" && !isDocumentary(title)).slice(0, 40);
+    const documentales = unseenSorted.filter(isDocumentary).slice(0, 40);
 
     const bestImdb = [...titles]
       .filter((title) => title.imdbRating)
@@ -889,7 +983,7 @@ function HomeView({
       .sort((a, b) => (b.addedAt ?? "").localeCompare(a.addedAt ?? ""))
       .slice(0, 30);
 
-    return { toRate, siguiendo, paraVerJuntos, pelisHoy, seriesHoy, bestImdb, trending, novedades };
+    return { toRate, siguiendo, paraVerJuntos, pelisHoy, seriesHoy, documentales, bestImdb, trending, novedades };
   }, [titles, trendingKeys, activeProfile]);
 
   return (
@@ -941,6 +1035,13 @@ function HomeView({
         <>
           <SectionHeader icon={Trophy} title="Mejores IMDb disponibles" />
           <HorizontalShelf titles={shelves.bestImdb} onSelect={openDetail} />
+        </>
+      )}
+
+      {shelves.documentales.length > 0 && (
+        <>
+          <SectionHeader icon={Camera} title="Documentales" />
+          <HorizontalShelf titles={shelves.documentales} onSelect={openDetail} />
         </>
       )}
 
@@ -1133,12 +1234,17 @@ function ExploreView({
 function TodayView({
   titles,
   activeProfile,
-  openDetail
+  openDetail,
+  matchVotes,
+  voteMatch
 }: {
   titles: CineTitle[];
   activeProfile: ProfileKey;
   openDetail: (title: CineTitle) => void;
+  matchVotes: MatchVoteMap;
+  voteMatch: (title: CineTitle, liked: boolean) => void;
 }) {
+  const [mode, setMode] = useState<"ruleta" | "match">("ruleta");
   const [scope, setScope] = useState<TodayScope>("both");
   const [kind, setKind] = useState<"all" | MediaKind>("all");
   const [maxMinutes, setMaxMinutes] = useState(0);
@@ -1153,9 +1259,12 @@ function TodayView({
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [titles]);
 
-  const picks = useMemo(() => {
-    const candidates = titles.filter((title) => {
-      const unseen = scope === "both"
+  // Shared candidate filter (roulette and match use the same knobs).
+  // Match is inherently for both, so it always uses the "both" scope.
+  const effectiveScope = mode === "match" ? "both" : scope;
+  const candidates = useMemo(() => {
+    return titles.filter((title) => {
+      const unseen = effectiveScope === "both"
         ? title.personal.RR.status !== "watched" && title.personal.LB.status !== "watched"
         : title.personal[activeProfile].status !== "watched";
       if (!unseen) return false;
@@ -1166,29 +1275,61 @@ function TodayView({
       if (genre && !title.genres.includes(genre)) return false;
       return true;
     });
+  }, [titles, effectiveScope, kind, activeProfile, selectedProviders, maxMinutes, minScore, genre]);
 
-    // Pure roulette: 20 titles drawn at random from EVERYTHING that matches the
-    // filters (not just the best-rated), reshuffled per "Otra ruleta". Quality
-    // is only shown, never used to pick.
+  // Pure roulette: 20 titles drawn at random from EVERYTHING that matches the
+  // filters (not just the best-rated), reshuffled per "Otra ruleta". Quality
+  // is only shown, never used to pick.
+  const picks = useMemo(() => {
     return [...candidates]
       .sort((left, right) => seededJitter(right.id, seed) - seededJitter(left.id, seed))
       .slice(0, 20)
       .map((title) => ({ title, score: Math.min(10, blendedScore(title)) }));
-  }, [titles, scope, kind, activeProfile, selectedProviders, maxMinutes, minScore, genre, seed]);
+  }, [candidates, seed]);
+
+  // Match queue: filtered candidates the active user hasn't voted yet, in a
+  // stable per-session random order (so the stack doesn't jump while voting).
+  const matchQueue = useMemo(() => {
+    return candidates
+      .filter((title) => matchVotes[title.id]?.[activeProfile] === undefined)
+      .sort((left, right) => seededJitter(right.id, initialRouletteSeed) - seededJitter(left.id, initialRouletteSeed));
+  }, [candidates, matchVotes, activeProfile]);
+
+  const matches = useMemo(() => {
+    return titles.filter(
+      (title) =>
+        matchVotes[title.id]?.RR === true &&
+        matchVotes[title.id]?.LB === true &&
+        (title.personal.RR.status !== "watched" || title.personal.LB.status !== "watched")
+    );
+  }, [titles, matchVotes]);
+
+  const currentCard = matchQueue[0];
 
   return (
     <div className="space-y-4">
-      <SectionHeader icon={Dices} title="Que vemos hoy" />
+      <SectionHeader icon={mode === "ruleta" ? Dices : Heart} title="Que vemos hoy" />
+
+      <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-black/24 p-1">
+        <button type="button" onClick={() => setMode("ruleta")} aria-pressed={mode === "ruleta"} className={`flex h-10 items-center justify-center gap-1.5 rounded-xl text-sm font-bold transition ${mode === "ruleta" ? "bg-[var(--gold)] text-black" : "text-[var(--text-soft)]"}`}>
+          <Dices size={16} /> Ruleta
+        </button>
+        <button type="button" onClick={() => setMode("match")} aria-pressed={mode === "match"} className={`flex h-10 items-center justify-center gap-1.5 rounded-xl text-sm font-bold transition ${mode === "match" ? "bg-[var(--gold)] text-black" : "text-[var(--text-soft)]"}`}>
+          <Heart size={16} /> Match
+        </button>
+      </div>
 
       <div className="space-y-3 rounded-2xl border border-white/10 bg-white/6 p-3">
-        <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-black/24 p-1">
-          <button type="button" onClick={() => setScope("both")} aria-pressed={scope === "both"} className={`h-10 rounded-xl text-sm font-bold transition ${scope === "both" ? "bg-[var(--gold)] text-black" : "text-[var(--text-soft)]"}`}>
-            Para los dos
-          </button>
-          <button type="button" onClick={() => setScope("me")} aria-pressed={scope === "me"} className={`h-10 rounded-xl text-sm font-bold transition ${scope === "me" ? "bg-[var(--gold)] text-black" : "text-[var(--text-soft)]"}`}>
-            Solo {activeProfile}
-          </button>
-        </div>
+        {mode === "ruleta" && (
+          <div className="grid grid-cols-2 gap-2 rounded-2xl border border-white/10 bg-black/24 p-1">
+            <button type="button" onClick={() => setScope("both")} aria-pressed={scope === "both"} className={`h-10 rounded-xl text-sm font-bold transition ${scope === "both" ? "bg-[var(--gold)] text-black" : "text-[var(--text-soft)]"}`}>
+              Para los dos
+            </button>
+            <button type="button" onClick={() => setScope("me")} aria-pressed={scope === "me"} className={`h-10 rounded-xl text-sm font-bold transition ${scope === "me" ? "bg-[var(--gold)] text-black" : "text-[var(--text-soft)]"}`}>
+              Solo {activeProfile}
+            </button>
+          </div>
+        )}
 
         <div className="flex items-center gap-2">
           <FilterChip active={kind === "all"} onClick={() => setKind("all")}>Todo</FilterChip>
@@ -1232,38 +1373,118 @@ function TodayView({
           <input type="range" min="0" max="10" step="1" value={minScore} onChange={(event) => setMinScore(Number(event.target.value))} className="w-full accent-[var(--gold)]" />
         </label>
 
-        <button type="button" onClick={() => setSeed((value) => value + 1)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--gold)] py-3 text-sm font-bold text-black">
-          <Dices size={18} /> Otra ruleta
-        </button>
+        {mode === "ruleta" && (
+          <button type="button" onClick={() => setSeed((value) => value + 1)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--gold)] py-3 text-sm font-bold text-black">
+            <Dices size={18} /> Otra ruleta
+          </button>
+        )}
       </div>
 
-      {picks.length === 0 ? (
-        <p className="rounded-xl border border-white/10 bg-white/6 p-4 text-sm text-[var(--muted)]">
-          No hay candidatas con estos filtros. Prueba a quitar plataforma, genero o tiempo.
-        </p>
-      ) : (
-        <div className="space-y-2">
-          {picks.map(({ title, score }) => (
-            <div key={title.id} className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/6 p-3">
-              <button type="button" onClick={() => openDetail(title)} className="shrink-0">
-                <Poster title={title} size="small" />
-              </button>
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-semibold">{title.title}</p>
-                <p className="truncate text-sm text-[var(--muted)]">{formatTitleMeta(title, true)}</p>
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {title.availability.slice(0, 3).map((item) => (
-                    <ProviderBadge key={`${title.id}-${item.provider}`} provider={item.provider} type={item.type} compact />
-                  ))}
+      {mode === "ruleta" && (
+        picks.length === 0 ? (
+          <p className="rounded-xl border border-white/10 bg-white/6 p-4 text-sm text-[var(--muted)]">
+            No hay candidatas con estos filtros. Prueba a quitar plataforma, genero o tiempo.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {picks.map(({ title, score }) => (
+              <div key={title.id} className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/6 p-3">
+                <button type="button" onClick={() => openDetail(title)} className="shrink-0">
+                  <Poster title={title} size="small" />
+                </button>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold">{title.title}</p>
+                  <p className="truncate text-sm text-[var(--muted)]">{formatTitleMeta(title, true)}</p>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {title.availability.slice(0, 3).map((item) => (
+                      <ProviderBadge key={`${title.id}-${item.provider}`} provider={item.provider} type={item.type} compact />
+                    ))}
+                  </div>
+                </div>
+                <div className="flex flex-col items-center gap-1">
+                  <div className="grid h-11 w-11 place-items-center rounded-full bg-[var(--gold)] text-sm font-black text-black">{score.toFixed(1)}</div>
+                  <button type="button" onClick={() => openDetail(title)} className="text-[10px] font-semibold text-[var(--muted)]">Ficha</button>
                 </div>
               </div>
-              <div className="flex flex-col items-center gap-1">
-                <div className="grid h-11 w-11 place-items-center rounded-full bg-[var(--gold)] text-sm font-black text-black">{score.toFixed(1)}</div>
-                <button type="button" onClick={() => openDetail(title)} className="text-[10px] font-semibold text-[var(--muted)]">Ficha</button>
+            ))}
+          </div>
+        )
+      )}
+
+      {mode === "match" && (
+        <>
+          {!currentCard ? (
+            <p className="rounded-xl border border-white/10 bg-white/6 p-4 text-sm text-[var(--muted)]">
+              No quedan candidatas por votar con estos filtros. Cambia los filtros o espera a que {activeProfile === "RR" ? "LB" : "RR"} vote las suyas.
+            </p>
+          ) : (
+            <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/6">
+              <button type="button" onClick={() => openDetail(currentCard)} className="block w-full">
+                <div
+                  className="h-[380px] w-full bg-cover bg-center"
+                  style={{ backgroundImage: `url(https://image.tmdb.org/t/p/w500${currentCard.posterPath})` }}
+                  aria-label={currentCard.title}
+                />
+              </button>
+              <div className="p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-lg font-semibold">{currentCard.title}</p>
+                    <p className="truncate text-sm text-[var(--muted)]">{formatTitleMeta(currentCard, true)}</p>
+                  </div>
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-black/35 text-sm font-bold">
+                    {(currentCard.imdbRating ?? currentCard.tmdbRating)?.toFixed(1) ?? "-"}
+                  </span>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {currentCard.availability.slice(0, 4).map((item) => (
+                    <ProviderBadge key={`${currentCard.id}-${item.provider}`} provider={item.provider} type={item.type} compact />
+                  ))}
+                </div>
+                <div className="mt-4 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => voteMatch(currentCard, false)}
+                    className="grid h-16 place-items-center rounded-2xl border border-white/10 bg-white/8 text-[var(--text-soft)] transition hover:bg-red-500/20"
+                    aria-label="No me apetece"
+                  >
+                    <X size={28} />
+                  </button>
+                  <button type="button" onClick={() => openDetail(currentCard)} className="grid h-11 w-11 place-items-center rounded-full bg-white/8 text-[var(--muted)]" aria-label="Ver ficha">
+                    <Info size={18} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => voteMatch(currentCard, true)}
+                    className="grid h-16 place-items-center rounded-2xl bg-[var(--gold)] text-black transition hover:brightness-110"
+                    aria-label="Me apetece"
+                  >
+                    <Heart size={28} />
+                  </button>
+                </div>
+                <p className="mt-2 text-center text-[10px] text-[var(--muted)]">{matchQueue.length - 1} candidatas en la pila</p>
               </div>
             </div>
-          ))}
-        </div>
+          )}
+
+          {matches.length > 0 && (
+            <>
+              <SectionHeader icon={Heart} title={`Vuestros matches (${matches.length})`} />
+              <div className="space-y-2">
+                {matches.map((title) => (
+                  <button key={title.id} type="button" onClick={() => openDetail(title)} className="flex w-full items-center gap-3 rounded-xl border border-[var(--gold)]/25 bg-white/6 p-2.5 text-left">
+                    <Poster title={title} size="small" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-semibold">{title.title}</p>
+                      <p className="truncate text-xs text-[var(--muted)]">{formatTitleMeta(title, true)}</p>
+                    </div>
+                    <Heart size={18} className="shrink-0 text-[var(--gold)]" fill="currentColor" />
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </>
       )}
     </div>
   );
