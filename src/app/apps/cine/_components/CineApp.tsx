@@ -417,8 +417,15 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
         method: "POST",
         headers: { Authorization: `Bearer ${accessToken}` },
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? "No se pudo actualizar el catalogo.");
+      // A serverless timeout returns an HTML error page, not JSON: parse safely
+      // and give a human message instead of "Unexpected token".
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload) {
+        throw new Error(
+          payload?.error ??
+            "La actualizacion tardo demasiado y se corto. El catalogo puede haberse actualizado parcialmente; prueba otra vez en un momento."
+        );
+      }
       const ratings = payload.ratings;
       const ratingsText = ratings && !ratings.skipped ? ` Notas externas: ${ratings.updated ?? 0}/${ratings.attempted ?? 0}.` : "";
       setSyncMessage(`Catalogo actualizado: ${payload.titles ?? 0} titulos importados.${ratingsText}`);

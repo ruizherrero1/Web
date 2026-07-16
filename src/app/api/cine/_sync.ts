@@ -23,13 +23,31 @@ export function getPagesPerProvider() {
   return Number.isFinite(configured) ? Math.min(Math.max(configured, 1), 50) : 20;
 }
 
-// Full pipeline: import from TMDB, refresh availability, migrate legacy marks and enrich ratings.
+// Parallel DB round-trips: with a 6700+ title catalog the sequential writes
+// alone blew the 60s serverless budget once the table was fully populated
+// (every upsert becomes an UPDATE).
+const dbConcurrency = 4;
+
+async function inWaves<T>(items: T[], run: (item: T) => Promise<void>) {
+  for (let index = 0; index < items.length; index += dbConcurrency) {
+    await Promise.all(items.slice(index, index + dbConcurrency).map(run));
+  }
+}
+
+// Full pipeline: import from TMDB, refresh availability, migrate legacy marks
+// and enrich ratings. Time-boxed: if the import ate the budget, the OMDb
+// enrichment is skipped — the daily ratings cron covers it anyway.
 export async function runCatalogSync(supabase: SupabaseClient): Promise<CatalogSyncResult> {
+  const deadline = Date.now() + 48_000;
   const catalog = await loadTmdbCatalogForSync(getPagesPerProvider());
   const upserted = await upsertTitles(supabase, catalog.titles);
   await replaceAvailability(supabase, catalog.titles, upserted);
   await migrateLegacyMarks(supabase);
-  const ratings = await enrichRatingsFromOmdb(supabase);
+
+  const ratings =
+    Date.now() > deadline - 8_000
+      ? { attempted: 0, updated: 0, skipped: true }
+      : await enrichRatingsFromOmdb(supabase, deadline);
 
   return {
     titles: catalog.titles.length,
@@ -41,7 +59,7 @@ export async function runCatalogSync(supabase: SupabaseClient): Promise<CatalogS
 
 // Lightweight pipeline: only enrich a batch of ratings (for a frequent cron that must stay fast).
 export async function runRatingsSync(supabase: SupabaseClient): Promise<{ ratings: RatingsResult }> {
-  return { ratings: await enrichRatingsFromOmdb(supabase) };
+  return { ratings: await enrichRatingsFromOmdb(supabase, Date.now() + 48_000) };
 }
 
 async function upsertTitles(supabase: SupabaseClient, titles: TmdbCatalogTitle[]) {
@@ -49,18 +67,26 @@ async function upsertTitles(supabase: SupabaseClient, titles: TmdbCatalogTitle[]
     ...title,
     updated_at: title.last_synced_at,
   }));
-  const upserted = new Map<string, string>();
 
-  for (const chunk of chunks(rows, chunkSize)) {
+  // Upsert without returning rows (much cheaper), in parallel waves.
+  await inWaves(chunks(rows, chunkSize), async (chunk) => {
+    const { error } = await supabase.from("cine_titles").upsert(chunk, { onConflict: "tmdb_id,media_type" });
+    if (error) throw error;
+  });
+
+  // Fetch the id map separately, paged (PostgREST caps responses at 1000 rows).
+  const upserted = new Map<string, string>();
+  const pageSize = 1000;
+  for (let from = 0; ; from += pageSize) {
     const { data, error } = await supabase
       .from("cine_titles")
-      .upsert(chunk, { onConflict: "tmdb_id,media_type" })
-      .select("id, tmdb_id, media_type");
-
+      .select("id, tmdb_id, media_type")
+      .range(from, from + pageSize - 1);
     if (error) throw error;
     for (const row of (data ?? []) as Array<{ id: string; tmdb_id: number; media_type: string }>) {
       upserted.set(`${row.media_type}-${row.tmdb_id}`, row.id);
     }
+    if (!data || data.length < pageSize) break;
   }
 
   return upserted;
@@ -72,10 +98,10 @@ async function replaceAvailability(
   titleIdsByTmdb: Map<string, string>
 ) {
   const titleIds = [...titleIdsByTmdb.values()];
-  for (const chunk of chunks(titleIds, chunkSize)) {
+  await inWaves(chunks(titleIds, chunkSize), async (chunk) => {
     const { error } = await supabase.from("cine_availability").delete().in("title_id", chunk).eq("region", "ES");
     if (error) throw error;
-  }
+  });
 
   const rows = titles.flatMap((title) => {
     const titleId = titleIdsByTmdb.get(`${title.media_type}-${title.tmdb_id}`);
@@ -90,10 +116,10 @@ async function replaceAvailability(
     }));
   });
 
-  for (const chunk of chunks(rows, chunkSize)) {
+  await inWaves(chunks(rows, chunkSize), async (chunk) => {
     const { error } = await supabase.from("cine_availability").insert(chunk);
     if (error) throw error;
-  }
+  });
 }
 
 type EnrichableTitle = {
@@ -108,7 +134,7 @@ type EnrichableTitle = {
 
 // Enrich the stalest titles with IMDb + Rotten Tomatoes + Metacritic + runtime from OMDb.
 // Bounded per run (OMDb free tier is ~1000/day), so repeated syncs cover the catalog over time.
-async function enrichRatingsFromOmdb(supabase: SupabaseClient): Promise<RatingsResult> {
+async function enrichRatingsFromOmdb(supabase: SupabaseClient, deadline?: number): Promise<RatingsResult> {
   const configuredLimit = Number(process.env.CINE_OMDB_SYNC_LIMIT ?? 40);
   const limit = Number.isFinite(configuredLimit) ? Math.min(Math.max(configuredLimit, 0), 200) : 40;
   if (!hasOmdbEnv() || limit === 0) return { attempted: 0, updated: 0, skipped: true };
@@ -129,8 +155,10 @@ async function enrichRatingsFromOmdb(supabase: SupabaseClient): Promise<RatingsR
   const list = (titles ?? []) as EnrichableTitle[];
 
   // Enrich in parallel waves: 150 sequential OMDb calls would eat the whole
-  // 60s serverless budget on their own.
+  // 60s serverless budget on their own. Stops early when the deadline nears;
+  // the daily cron picks up whatever is left.
   for (let index = 0; index < list.length; index += enrichConcurrency) {
+    if (deadline && Date.now() > deadline - 3_000) break;
     const wave = list.slice(index, index + enrichConcurrency);
     await Promise.all(
       wave.map(async (title) => {
