@@ -78,6 +78,31 @@ const rottenTomatoesSearch = (title: CineTitle) =>
 const metacriticSearch = (title: CineTitle) =>
   `https://www.metacritic.com/search/${encodeURIComponent(title.title)}/`;
 
+// Module-level (not render) so the roulette starts on a different draw each
+// time the app is opened, while staying deterministic within the session.
+const initialRouletteSeed = Math.floor(Math.random() * 1_000_000);
+
+// TV programs (reality, talk shows, news, soaps) and animation series are
+// filtered out of the whole app: not what this catalog is for. Titles the
+// couple already interacted with are always kept.
+const noiseTvGenres = new Set(["reality", "talk", "noticias", "news", "telenovela", "soap"]);
+
+function isNoiseTitle(title: CineTitle) {
+  if (title.kind !== "series") return false;
+  const genres = title.genres.map((genre) => normalizeText(genre));
+  return genres.some((genre) => noiseTvGenres.has(genre)) || genres.includes("animacion");
+}
+
+function hasCoupleInteraction(title: CineTitle) {
+  return (
+    title.pendingCategories.length > 0 ||
+    title.personal.RR.status !== "none" ||
+    title.personal.LB.status !== "none" ||
+    Boolean(title.personal.RR.rating) ||
+    Boolean(title.personal.LB.rating)
+  );
+}
+
 type CineThemeKey = "classic" | "ocean" | "emerald" | "violet" | "sunset";
 
 const cineThemes: Array<{ key: CineThemeKey; label: string; accent: string; deep: string }> = [
@@ -185,7 +210,9 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
         return;
       }
 
-      const nextTitles = (payload.titles ?? []) as CineTitle[];
+      const nextTitles = ((payload.titles ?? []) as CineTitle[]).filter(
+        (title) => !isNoiseTitle(title) || hasCoupleInteraction(title)
+      );
       setTitles(nextTitles);
       setLastSyncedAt((payload.lastSyncedAt as string | null) ?? null);
 
@@ -840,11 +867,12 @@ function HomeView({
         (title.personal.RR.status !== "watched" || title.personal.LB.status !== "watched")
     );
 
-    // "Para decidir hoy": best unseen-by-both, ranked by real ratings.
-    const unwatchedTogether = titles
+    // "Para ver hoy": best unseen-by-both, ranked by real ratings, split by kind.
+    const unseenSorted = titles
       .filter((title) => title.personal.RR.status !== "watched" && title.personal.LB.status !== "watched")
-      .sort((a, b) => blendedScore(b) - blendedScore(a) || b.tmdbPopularity - a.tmdbPopularity)
-      .slice(0, 40);
+      .sort((a, b) => blendedScore(b) - blendedScore(a) || b.tmdbPopularity - a.tmdbPopularity);
+    const pelisHoy = unseenSorted.filter((title) => title.kind === "movie").slice(0, 40);
+    const seriesHoy = unseenSorted.filter((title) => title.kind === "series").slice(0, 40);
 
     const bestImdb = [...titles]
       .filter((title) => title.imdbRating)
@@ -861,7 +889,7 @@ function HomeView({
       .sort((a, b) => (b.addedAt ?? "").localeCompare(a.addedAt ?? ""))
       .slice(0, 30);
 
-    return { toRate, siguiendo, paraVerJuntos, unwatchedTogether, bestImdb, trending, novedades };
+    return { toRate, siguiendo, paraVerJuntos, pelisHoy, seriesHoy, bestImdb, trending, novedades };
   }, [titles, trendingKeys, activeProfile]);
 
   return (
@@ -888,10 +916,17 @@ function HomeView({
         </>
       )}
 
-      {shelves.unwatchedTogether.length > 0 && (
+      {shelves.pelisHoy.length > 0 && (
         <>
-          <SectionHeader icon={Sparkles} title="Para decidir hoy" action="Buscar" onAction={() => setActiveTab("explore")} />
-          <HorizontalShelf titles={shelves.unwatchedTogether} onSelect={openDetail} />
+          <SectionHeader icon={Film} title="Pelis para ver hoy" action="Buscar" onAction={() => setActiveTab("explore")} />
+          <HorizontalShelf titles={shelves.pelisHoy} onSelect={openDetail} />
+        </>
+      )}
+
+      {shelves.seriesHoy.length > 0 && (
+        <>
+          <SectionHeader icon={Tv} title="Series para ver hoy" action="Buscar" onAction={() => setActiveTab("explore")} />
+          <HorizontalShelf titles={shelves.seriesHoy} onSelect={openDetail} />
         </>
       )}
 
@@ -1110,16 +1145,13 @@ function TodayView({
   const [minScore, setMinScore] = useState(0);
   const [selectedProviders, setSelectedProviders] = useState<ProviderKey[]>([]);
   const [genre, setGenre] = useState("");
-  const [seed, setSeed] = useState(0);
+  const [seed, setSeed] = useState(initialRouletteSeed);
 
   const allGenres = useMemo(() => {
     const set = new Set<string>();
     for (const title of titles) for (const g of title.genres) set.add(g);
     return [...set].sort((a, b) => a.localeCompare(b));
   }, [titles]);
-
-  const affinityRR = useMemo(() => genreAffinity(titles, "RR"), [titles]);
-  const affinityLB = useMemo(() => genreAffinity(titles, "LB"), [titles]);
 
   const picks = useMemo(() => {
     const candidates = titles.filter((title) => {
@@ -1135,29 +1167,14 @@ function TodayView({
       return true;
     });
 
-    const scored = candidates
-      .map((title) => {
-        const base = blendedScore(title);
-        // Consensus by learned genre taste: for "both" favour titles both would like (min),
-        // for a single user use only their own affinity. Falls back to the rating blend.
-        const consensus =
-          scope === "both"
-            ? consensusAffinity(title, affinityRR, affinityLB)
-            : predictedAffinity(title, activeProfile === "RR" ? affinityRR : affinityLB);
-        const quality = base * 0.6 + (consensus ?? base) * 0.4;
-        return { title, score: Math.min(10, quality) };
-      })
-      .sort((left, right) => right.score - left.score);
-
-    // Real roulette: build a pool with the best ~60 candidates and draw 5 at
-    // random from it (seeded by "Otra ruleta"). Ranking by score alone made the
-    // same handful of fan-inflated titles appear every single time.
-    const pool = scored.slice(0, Math.min(60, scored.length));
-    return [...pool]
-      .sort((left, right) => seededJitter(right.title.id, seed) - seededJitter(left.title.id, seed))
-      .slice(0, 5)
-      .sort((left, right) => right.score - left.score);
-  }, [titles, scope, kind, activeProfile, selectedProviders, maxMinutes, minScore, genre, seed, affinityRR, affinityLB]);
+    // Pure roulette: 20 titles drawn at random from EVERYTHING that matches the
+    // filters (not just the best-rated), reshuffled per "Otra ruleta". Quality
+    // is only shown, never used to pick.
+    return [...candidates]
+      .sort((left, right) => seededJitter(right.id, seed) - seededJitter(left.id, seed))
+      .slice(0, 20)
+      .map((title) => ({ title, score: Math.min(10, blendedScore(title)) }));
+  }, [titles, scope, kind, activeProfile, selectedProviders, maxMinutes, minScore, genre, seed]);
 
   return (
     <div className="space-y-4">
@@ -2123,41 +2140,6 @@ function passesWatchFilter(title: CineTitle, watch: WatchFilter, activeProfile: 
   return title.pendingCategories.length > 0;
 }
 
-// Average rating a profile has given, per genre (learned taste on a 1-10 scale).
-function genreAffinity(titles: CineTitle[], profile: ProfileKey) {
-  const sums = new Map<string, { total: number; count: number }>();
-  for (const title of titles) {
-    const rating = title.personal[profile].rating;
-    if (!rating) continue;
-    for (const genre of title.genres) {
-      const entry = sums.get(genre) ?? { total: 0, count: 0 };
-      entry.total += rating;
-      entry.count += 1;
-      sums.set(genre, entry);
-    }
-  }
-  const affinity = new Map<string, number>();
-  for (const [genre, { total, count }] of sums) affinity.set(genre, total / count);
-  return affinity;
-}
-
-// Predicted score for a title from a profile's genre affinity; undefined if no signal.
-function predictedAffinity(title: CineTitle, affinity: Map<string, number>) {
-  const values = title.genres.map((genre) => affinity.get(genre)).filter((value): value is number => value !== undefined);
-  if (!values.length) return undefined;
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
-// For "both": favour titles both would like by taking the lower predicted affinity.
-function consensusAffinity(title: CineTitle, affinityRR: Map<string, number>, affinityLB: Map<string, number>) {
-  const rr = predictedAffinity(title, affinityRR);
-  const lb = predictedAffinity(title, affinityLB);
-  if (rr === undefined && lb === undefined) return undefined;
-  if (rr === undefined) return lb;
-  if (lb === undefined) return rr;
-  return Math.min(rr, lb);
-}
-
 // Blend of every available rating source on a 0-10 scale.
 function blendedScore(title: CineTitle) {
   const parts: number[] = [];
@@ -2173,14 +2155,14 @@ function blendedScore(title: CineTitle) {
   return parts.reduce((sum, value) => sum + value, 0) / parts.length;
 }
 
-// Small deterministic jitter so "Otra ruleta" reshuffles among good candidates without a full re-render randomness.
+// Deterministic per-title pseudo-random used as the roulette shuffle key.
+// High resolution so 7000 candidates rarely collide.
 function seededJitter(id: string, seed: number) {
   let hash = seed * 2654435761;
   for (let index = 0; index < id.length; index += 1) {
     hash = (hash ^ id.charCodeAt(index)) * 16777619;
   }
-  const normalized = ((hash >>> 0) % 1000) / 1000;
-  return normalized * 0.9;
+  return ((hash >>> 0) % 1000000) / 1000000;
 }
 
 function formatMinScore(filters: Filters) {
