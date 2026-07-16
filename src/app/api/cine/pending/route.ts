@@ -43,12 +43,19 @@ async function updatePending(request: Request, action: "add" | "remove") {
   if (!category) return NextResponse.json({ error: "Unknown pending category." }, { status: 404 });
 
   if (action === "add") {
-    const { error } = await auth.supabase.from("cine_pending_items").upsert({
+    // Plain insert, NOT upsert: Postgres requires UPDATE privilege for
+    // INSERT ... ON CONFLICT DO UPDATE even when no conflict happens, and the
+    // grants/policies for cine_pending_items only allow insert/delete — the
+    // upsert made every add fail with "permission denied". A duplicate key
+    // (already in that category) is simply treated as success.
+    const { error } = await auth.supabase.from("cine_pending_items").insert({
       title_id: title.id,
       category_id: category.id,
       added_by: auth.profile.id,
-    }, { onConflict: "title_id,category_id" });
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    });
+    if (error && error.code !== "23505") {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
     return NextResponse.json({ ok: true });
   }
 
