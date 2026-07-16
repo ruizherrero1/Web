@@ -63,7 +63,7 @@ export async function GET(request: Request) {
     // Legacy cine_user_marks are copied into cine_user_title_states by the sync
     // (migrateLegacyMarks), so the catalog no longer reads that table on every load.
     const [titles, availability, states, pending] = await Promise.all([
-      fetchAll<DbTitle>(() => auth.supabase.from("cine_titles").select(titleSelect).order("tmdb_popularity", { ascending: false })),
+      fetchAll<DbTitle>(() => auth.supabase.from("cine_titles").select(titleSelect).eq("hidden", false).order("tmdb_popularity", { ascending: false })),
       fetchAll<DbAvailability>(() => auth.supabase.from("cine_availability").select("title_id, provider_key, monetization").eq("region", "ES")),
       fetchAll<DbState>(() => auth.supabase.from("cine_user_title_states").select("title_id, status, rating, watched_at, progress_season, progress_episode, cine_profiles(initials)")),
       fetchAll<DbPending>(() => auth.supabase.from("cine_pending_items").select("title_id, cine_pending_categories(name), cine_profiles(initials)")),

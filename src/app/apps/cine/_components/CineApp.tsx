@@ -7,6 +7,7 @@ import {
   CloudOff,
   Dices,
   ExternalLink,
+  EyeOff,
   Film,
   Camera,
   Flame,
@@ -407,6 +408,32 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
     }
   };
 
+  // Hide a title for both users, forever (survives re-syncs). Asks first.
+  const hideTitle = async (title: CineTitle) => {
+    if (!accessToken || !title.tmdbId) return;
+    if (!window.confirm(`¿Ocultar "${title.title}" del catalogo? Desaparecera para los dos y no volvera ni al actualizar.`)) return;
+
+    writeSeqRef.current += 1;
+    setTitles((current) => current.filter((item) => item.id !== title.id));
+    setDetailTitle(null);
+
+    try {
+      const response = await fetch("/api/cine/hide", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ tmdbId: title.tmdbId, mediaType: title.kind }),
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        setCatalogError(`No se pudo ocultar: ${payload?.error ?? `error ${response.status}`}`);
+        await loadCatalog();
+      }
+    } catch {
+      setCatalogError("Sin conexion: no se pudo ocultar el titulo.");
+      await loadCatalog();
+    }
+  };
+
   const syncCatalog = async () => {
     if (!accessToken || syncLoading) return;
     setSyncLoading(true);
@@ -762,6 +789,7 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
           openRating={setRatingFor}
           updatePendingCategory={updatePendingCategory}
           updateProgress={updateProgress}
+          hideTitle={hideTitle}
         />
       )}
       {matchCelebration && (
@@ -1757,7 +1785,8 @@ function TitleDetailSheet({
   markWatched,
   openRating,
   updatePendingCategory,
-  updateProgress
+  updateProgress,
+  hideTitle
 }: {
   title: CineTitle;
   accessToken?: string;
@@ -1767,6 +1796,7 @@ function TitleDetailSheet({
   openRating: (title: CineTitle) => void;
   updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
   updateProgress: (titleId: string, season: number | null, episode: number | null) => void;
+  hideTitle: (title: CineTitle) => void;
 }) {
   const [detail, setDetail] = useState<TitleDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -1917,6 +1947,14 @@ function TitleDetailSheet({
           )}
           <NotaButton title={title} activeProfile={activeProfile} openRating={openRating} />
           <PendingCategoryControls title={title} updatePendingCategory={updatePendingCategory} />
+          <button
+            type="button"
+            onClick={() => hideTitle(title)}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/4 py-2.5 text-xs font-semibold text-[var(--muted)] transition hover:bg-red-500/15 hover:text-red-200"
+          >
+            <EyeOff size={15} />
+            Ocultar del catalogo (para los dos, permanente)
+          </button>
         </div>
       </div>
     </div>
