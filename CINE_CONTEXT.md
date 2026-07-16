@@ -52,6 +52,7 @@ Tablas relevantes:
 - `cine_pending_categories`: categorias de pendientes.
 - `cine_pending_items`: titulos guardados como pendientes.
 - `cine_user_marks`: tabla antigua/compatibilidad.
+- `cine_match_votes`: votos por usuario/titulo para modo match; RLS activo y cada usuario solo escribe sus votos.
 
 Migraciones relevantes:
 
@@ -62,6 +63,8 @@ Migraciones relevantes:
 - `supabase/migrations/20260713_cine_api_grants.sql`
 - `supabase/migrations/20260713_cine_search_titles.sql`
 - `supabase/migrations/20260713_cine_rating_sources.sql` (imdb_id, runtime_minutes, metascore, ratings_updated_at)
+- `supabase/migrations/20260714_cine_series_progress.sql` (progress_season/progress_episode por usuario)
+- `supabase/migrations/20260716_cine_match_votes.sql` (tabla y RLS para votos del modo match)
 
 Notas de seguridad:
 

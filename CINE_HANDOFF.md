@@ -43,7 +43,7 @@ Notas externas (OMDb):
 
 - PR #18 (mergeado): Buscar paginado (40 por pagina + "Cargar mas"), estadisticas en Notas (vistas, medias, generos favoritos, discrepancias), gestor de Pendientes (mover de categoria + quitar rapido), frescura (catalog devuelve `lastSyncedAt`; banner de titulos nuevos desde la ultima visita via localStorage).
 - PR #19 (mergeado): cookie de acceso ahora es token HMAC con expiracion 180 dias y `timingSafeEqual` (las cookies antiguas dejan de validar: pedir la password compartida una vez). PWA v2: SW con caches versionadas, navegaciones/catalogo network-first (los deploys siempre ganan), cache-first solo para `/_next/static` (inmutable) y posters TMDB; registro solo tras login en CineApp.
-- Rama `cine/series-progress` (PENDIENTE de migracion): seguimiento de series por usuario (temporada/episodio). Migracion `20260714_cine_series_progress.sql` anade `progress_season`/`progress_episode` a `cine_user_title_states`. NO mergear hasta aplicar la migracion o `/api/cine/catalog` fallara (selecciona las columnas nuevas).
+- PR #20 / `cine/series-progress`: migracion aplicada en Supabase el 2026-07-14; `progress_season`/`progress_episode` existen en `cine_user_title_states`.
 
 ### 2026-07-13 - Hotfix: "Preparando Cine" colgado (hidratacion)
 
@@ -218,6 +218,14 @@ Ratings externos:
 - Sync manual ejecutado: `titles=6777`, `requestedPages=800`, duracion ~39.6s.
 - OMDb en ese sync: `attempted=150`, `updated=140`, `skipped=false`.
 - Riesgo: la ruta tiene `maxDuration=60`; si TMDB/OMDb va lento, 40 paginas puede acercarse al timeout.
+
+
+### 2026-07-16 - Match votes activado en Supabase
+
+- Aplicado en Supabase `public.cine_match_votes` con PK `(user_id, title_id)`.
+- RLS activado y policies creadas: select para usuarios Cine; insert/update/delete solo del voto propio.
+- Grants `select, insert, update, delete` para `authenticated` verificados.
+- Migracion local existente: `supabase/migrations/20260716_cine_match_votes.sql`.
 
 ## Incidencias conocidas
 

@@ -1,6 +1,6 @@
 -- Match mode: each user swipes yes/no on titles; when both like the same one
 -- it becomes a match. One row per user+title.
--- NOTE: includes the UPDATE grant/policy on purpose — the API upserts revotes,
+-- NOTE: includes the UPDATE grant/policy on purpose - the API upserts revotes,
 -- and Postgres requires UPDATE privilege for INSERT..ON CONFLICT DO UPDATE
 -- (the missing UPDATE on cine_pending_items is what broke pendings for days).
 
