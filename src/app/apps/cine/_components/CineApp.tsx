@@ -25,7 +25,7 @@ import {
   Users,
   X
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { demoTitles, pendingCategories, profiles, providers } from "../_lib/cine-data";
 import { CINE_QUEUE_CHANGED, enqueueMutation, flushQueue, getPendingCount } from "../_lib/offline";
 import type { CineTitle, MediaKind, MonetizationType, PendingCategory, PersonalState, ProfileKey, ProviderKey, TitleDetail, WatchStatus } from "../_lib/types";
@@ -140,7 +140,7 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
   const [catalogError, setCatalogError] = useState("");
   const [syncMessage, setSyncMessage] = useState("");
   const [filters, setFilters] = useState<Filters>(initialFilters);
-  const [selectedTitleId, setSelectedTitleId] = useState<string>(demoTitles[0]?.id ?? "");
+
   const [detailTitle, setDetailTitle] = useState<CineTitle | null>(null);
   const [ratingFor, setRatingFor] = useState<CineTitle | null>(null);
   const [trendingKeys, setTrendingKeys] = useState<string[]>([]);
@@ -150,6 +150,8 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
   const [newSinceVisit, setNewSinceVisit] = useState(0);
   const [theme, setTheme] = useState<CineThemeKey>(loadStoredTheme);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
+  // True while the rating popup was auto-opened by marking a title watched.
+  const autoRatingRef = useRef(false);
 
   const applyTheme = (next: CineThemeKey) => {
     setTheme(next);
@@ -173,7 +175,6 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
       const nextTitles = (payload.titles ?? []) as CineTitle[];
       setTitles(nextTitles);
       setLastSyncedAt((payload.lastSyncedAt as string | null) ?? null);
-      setSelectedTitleId((current) => (nextTitles.some((title) => title.id === current) ? current : nextTitles[0]?.id ?? ""));
 
       // "New since your last visit" banner, tracked per device in localStorage.
       try {
@@ -249,7 +250,7 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
     };
   }, []);
 
-  const selectedTitle = titles.find((title) => title.id === selectedTitleId) ?? titles[0];
+
 
   const filteredTitles = useMemo(() => {
     return titles
@@ -360,7 +361,13 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
         body: JSON.stringify(body),
       });
-      if (!response.ok) await loadCatalog();
+      if (!response.ok) {
+        // Surface the server error: silently reverting made pendings "vanish"
+        // with no clue about why.
+        const payload = await response.json().catch(() => null);
+        setCatalogError(`No se pudo guardar en pendientes: ${payload?.error ?? `error ${response.status}`}`);
+        await loadCatalog();
+      }
     } catch {
       enqueueMutation({ kind: "pending", action, body });
       setSyncMessage("Sin conexion: el cambio se guardara al reconectar.");
@@ -404,8 +411,10 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
     void persistState(currentTitle, { status: nextStatus, scope });
 
     // Close the loop: right after marking something watched, ask for the rating
-    // (only if the active user hasn't rated it yet).
+    // (only if the active user hasn't rated it yet). The flag makes the rating
+    // pick also close the detail sheet, so the whole flow ends in one tap.
     if (nextStatus === "watched" && !currentTitle.personal[activeProfile].rating) {
+      autoRatingRef.current = true;
       setRatingFor(currentTitle);
     }
 
@@ -552,13 +561,9 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
           {activeTab === "home" && (
             <HomeView
               titles={titles}
-              selectedTitle={selectedTitle}
               trendingKeys={trendingKeys}
-              setSelectedTitleId={setSelectedTitleId}
               setActiveTab={setActiveTab}
-              markWatched={markWatched}
               activeProfile={activeProfile}
-              updatePendingCategory={updatePendingCategory}
               openDetail={setDetailTitle}
               openRating={setRatingFor}
             />
@@ -568,7 +573,7 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
               titles={filteredTitles}
               filters={filters}
               setFilters={setFilters}
-              setSelectedTitleId={setSelectedTitleId}
+
               markWatched={markWatched}
               activeProfile={activeProfile}
               updatePendingCategory={updatePendingCategory}
@@ -686,8 +691,17 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
           onPick={(rating) => {
             updateRating(ratingFor.id, activeProfile, rating);
             setRatingFor(null);
+            // Watch-then-rate flow: after picking the rating, close the detail
+            // sheet too so the whole thing ends cleanly.
+            if (autoRatingRef.current) {
+              autoRatingRef.current = false;
+              setDetailTitle(null);
+            }
           }}
-          onClose={() => setRatingFor(null)}
+          onClose={() => {
+            autoRatingRef.current = false;
+            setRatingFor(null);
+          }}
         />
       )}
     </main>
@@ -783,37 +797,28 @@ function NotaButton({
 
 function HomeView({
   titles,
-  selectedTitle,
   trendingKeys,
-  setSelectedTitleId,
   setActiveTab,
-  markWatched,
   activeProfile,
-  updatePendingCategory,
   openDetail,
   openRating
 }: {
   titles: CineTitle[];
-  selectedTitle: CineTitle;
   trendingKeys: string[];
-  setSelectedTitleId: (id: string) => void;
   setActiveTab: (tab: TabKey) => void;
-  markWatched: (titleId: string, scope: "me" | "both") => void;
   activeProfile: ProfileKey;
-  updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
   openDetail: (title: CineTitle) => void;
   openRating: (title: CineTitle) => void;
 }) {
-  // A deliberately short Home: decide fast, rate what you watched. Platform and
-  // genre browsing lives in Buscar's filters, not here.
+  // Home is pure shelves (no giant hero). Everything is sliced so the tab stays
+  // light even with a 6000+ title catalog.
   const shelves = useMemo(() => {
-    const unwatchedTogether = titles.filter(
-      (title) => title.personal.RR.status !== "watched" && title.personal.LB.status !== "watched"
-    );
-
     const toRate = titles
       .filter((title) => title.personal[activeProfile].status === "watched" && !title.personal[activeProfile].rating)
-      .sort((a, b) => (b.personal[activeProfile].watchedAt ?? "").localeCompare(a.personal[activeProfile].watchedAt ?? ""));
+      .sort((a, b) => (b.personal[activeProfile].watchedAt ?? "").localeCompare(a.personal[activeProfile].watchedAt ?? ""))
+      .slice(0, 20);
+
+    const siguiendo = titles.filter((title) => title.personal[activeProfile].status === "watching");
 
     const paraVerJuntos = titles.filter(
       (title) =>
@@ -821,24 +826,29 @@ function HomeView({
         (title.personal.RR.status !== "watched" || title.personal.LB.status !== "watched")
     );
 
+    // "Para decidir hoy": best unseen-by-both, ranked by real ratings.
+    const unwatchedTogether = titles
+      .filter((title) => title.personal.RR.status !== "watched" && title.personal.LB.status !== "watched")
+      .sort((a, b) => blendedScore(b) - blendedScore(a) || b.tmdbPopularity - a.tmdbPopularity)
+      .slice(0, 40);
+
     const bestImdb = [...titles]
       .filter((title) => title.imdbRating)
       .sort((a, b) => (b.imdbRating ?? 0) - (a.imdbRating ?? 0))
-      .slice(0, 20);
+      .slice(0, 40);
 
     const trendingOrder = new Map(trendingKeys.map((key, index) => [key, index]));
     const trending = titles
       .filter((title) => trendingOrder.has(`${title.kind}-${title.tmdbId}`))
       .sort((a, b) => (trendingOrder.get(`${a.kind}-${a.tmdbId}`) ?? 0) - (trendingOrder.get(`${b.kind}-${b.tmdbId}`) ?? 0));
 
-    return { unwatchedTogether, toRate, paraVerJuntos, bestImdb, trending };
-  }, [titles, trendingKeys, activeProfile]);
+    const novedades = [...titles]
+      .filter((title) => title.addedAt)
+      .sort((a, b) => (b.addedAt ?? "").localeCompare(a.addedAt ?? ""))
+      .slice(0, 30);
 
-  // Tapping a shelf poster opens the full detail sheet (and syncs the hero behind it).
-  const openShelfTitle = (title: CineTitle) => {
-    setSelectedTitleId(title.id);
-    openDetail(title);
-  };
+    return { toRate, siguiendo, paraVerJuntos, unwatchedTogether, bestImdb, trending, novedades };
+  }, [titles, trendingKeys, activeProfile]);
 
   return (
     <div className="space-y-5">
@@ -849,41 +859,46 @@ function HomeView({
         </>
       )}
 
-      <HeroTitle
-        title={selectedTitle}
-        activeProfile={activeProfile}
-        markWatched={markWatched}
-        updatePendingCategory={updatePendingCategory}
-        openDetail={openDetail}
-        openRating={openRating}
-      />
+      {shelves.siguiendo.length > 0 && (
+        <>
+          <SectionHeader icon={Tv} title="Siguiendo" />
+          <HorizontalShelf titles={shelves.siguiendo} onSelect={openDetail} />
+        </>
+      )}
 
       {/* Their stated flow: first the couple's own list, then browsing. */}
       {shelves.paraVerJuntos.length > 0 && (
         <>
           <SectionHeader icon={Users} title="Para ver juntos" action="Pendientes" onAction={() => setActiveTab("pending")} />
-          <HorizontalShelf titles={shelves.paraVerJuntos} onSelect={openShelfTitle} />
+          <HorizontalShelf titles={shelves.paraVerJuntos} onSelect={openDetail} />
         </>
       )}
 
       {shelves.unwatchedTogether.length > 0 && (
         <>
           <SectionHeader icon={Sparkles} title="Para decidir hoy" action="Buscar" onAction={() => setActiveTab("explore")} />
-          <HorizontalShelf titles={shelves.unwatchedTogether} onSelect={openShelfTitle} />
+          <HorizontalShelf titles={shelves.unwatchedTogether} onSelect={openDetail} />
         </>
       )}
 
       {shelves.trending.length > 0 && (
         <>
           <SectionHeader icon={Flame} title="Tendencia esta semana" />
-          <HorizontalShelf titles={shelves.trending} onSelect={openShelfTitle} />
+          <HorizontalShelf titles={shelves.trending} onSelect={openDetail} />
         </>
       )}
 
       {shelves.bestImdb.length > 0 && (
         <>
           <SectionHeader icon={Trophy} title="Mejores IMDb disponibles" />
-          <HorizontalShelf titles={shelves.bestImdb} onSelect={openShelfTitle} />
+          <HorizontalShelf titles={shelves.bestImdb} onSelect={openDetail} />
+        </>
+      )}
+
+      {shelves.novedades.length > 0 && (
+        <>
+          <SectionHeader icon={Sparkles} title="Novedades en el catalogo" />
+          <HorizontalShelf titles={shelves.novedades} onSelect={openDetail} />
         </>
       )}
     </div>
@@ -894,7 +909,7 @@ function ExploreView({
   titles,
   filters,
   setFilters,
-  setSelectedTitleId,
+
   markWatched,
   activeProfile,
   updatePendingCategory,
@@ -904,7 +919,7 @@ function ExploreView({
   titles: CineTitle[];
   filters: Filters;
   setFilters: React.Dispatch<React.SetStateAction<Filters>>;
-  setSelectedTitleId: (id: string) => void;
+
   markWatched: (titleId: string, scope: "me" | "both") => void;
   activeProfile: ProfileKey;
   updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
@@ -1043,7 +1058,7 @@ function ExploreView({
           <TitleCard
             key={title.id}
             title={title}
-            onSelect={() => setSelectedTitleId(title.id)}
+            onSelect={() => openDetail(title)}
             activeProfile={activeProfile}
             markWatched={markWatched}
             updatePendingCategory={updatePendingCategory}
@@ -1106,7 +1121,7 @@ function TodayView({
       return true;
     });
 
-    return candidates
+    const scored = candidates
       .map((title) => {
         const base = blendedScore(title);
         // Consensus by learned genre taste: for "both" favour titles both would like (min),
@@ -1116,13 +1131,18 @@ function TodayView({
             ? consensusAffinity(title, affinityRR, affinityLB)
             : predictedAffinity(title, activeProfile === "RR" ? affinityRR : affinityLB);
         const quality = base * 0.6 + (consensus ?? base) * 0.4;
-        // The jitter only shuffles the ORDER on "Otra ruleta"; the displayed
-        // score is the real quality, clamped to the 0-10 scale (it used to show
-        // impossible values like 10.7).
-        return { title, score: Math.min(10, quality), sortScore: quality + seededJitter(title.id, seed) };
+        return { title, score: Math.min(10, quality) };
       })
-      .sort((left, right) => right.sortScore - left.sortScore)
-      .slice(0, 5);
+      .sort((left, right) => right.score - left.score);
+
+    // Real roulette: build a pool with the best ~60 candidates and draw 5 at
+    // random from it (seeded by "Otra ruleta"). Ranking by score alone made the
+    // same handful of fan-inflated titles appear every single time.
+    const pool = scored.slice(0, Math.min(60, scored.length));
+    return [...pool]
+      .sort((left, right) => seededJitter(right.title.id, seed) - seededJitter(left.title.id, seed))
+      .slice(0, 5)
+      .sort((left, right) => right.score - left.score);
   }, [titles, scope, kind, activeProfile, selectedProviders, maxMinutes, minScore, genre, seed, affinityRR, affinityLB]);
 
   return (
@@ -1420,78 +1440,6 @@ function RatingsView({ titles }: { titles: CineTitle[] }) {
   );
 }
 
-function HeroTitle({
-  title,
-  activeProfile,
-  markWatched,
-  updatePendingCategory,
-  openDetail,
-  openRating
-}: {
-  title: CineTitle;
-  activeProfile: ProfileKey;
-  markWatched: (titleId: string, scope: "me" | "both") => void;
-  updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
-  openDetail: (title: CineTitle) => void;
-  openRating: (title: CineTitle) => void;
-}) {
-  return (
-    <article className="overflow-hidden rounded-2xl border border-white/10 bg-white/7 shadow-xl shadow-black/25">
-      <div
-        className="min-h-[310px] bg-cover bg-center"
-        style={{
-          backgroundImage: `linear-gradient(180deg, rgba(8,7,7,0.18), rgba(8,7,7,0.92) 72%), url(https://image.tmdb.org/t/p/w780${title.backdropPath})`
-        }}
-      >
-        <div className="flex min-h-[310px] flex-col justify-end p-4">
-          <div className="mb-3 flex flex-wrap gap-2">
-            <Badge icon={title.kind === "movie" ? Film : Tv}>{title.kind === "movie" ? "Pelicula" : "Serie"}</Badge>
-            {title.availability.map((item) => (
-              <ProviderBadge key={`${item.provider}-${item.type}`} provider={item.provider} type={item.type} />
-            ))}
-          </div>
-          <h2 className="text-3xl font-semibold leading-tight">{title.title}</h2>
-          {title.originalTitle && title.originalTitle !== title.title && <p className="mt-1 text-sm font-semibold text-[var(--gold)]">{title.originalTitle}</p>}
-          <p className="mt-1 text-sm text-[var(--text-soft)]">{formatTitleMeta(title)}</p>
-          <p className="mt-3 line-clamp-3 text-sm leading-6 text-[var(--text-soft)]">{title.overview}</p>
-        </div>
-      </div>
-      <div className="space-y-3 p-4">
-        <button
-          type="button"
-          onClick={() => openDetail(title)}
-          className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/8 py-2.5 text-sm font-semibold text-[var(--text-soft)] transition hover:bg-white/14"
-        >
-          <Info size={17} />
-          Ver ficha completa
-        </button>
-        <RatingStrip title={title} />
-        <WatchStatusStrip title={title} activeProfile={activeProfile} />
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => markWatched(title.id, "me")}
-            className={`action-button ${title.personal[activeProfile].status === "watched" ? "action-button-done" : ""}`}
-          >
-            <Check size={18} />
-            Vista por mi
-          </button>
-          <button
-            type="button"
-            onClick={() => markWatched(title.id, "both")}
-            className={`action-button action-button-gold ${title.personal.RR.status === "watched" && title.personal.LB.status === "watched" ? "action-button-done" : ""}`}
-          >
-            <Users size={18} />
-            Vista ambos
-          </button>
-        </div>
-        <NotaButton title={title} activeProfile={activeProfile} openRating={openRating} />
-        <PendingCategoryControls title={title} updatePendingCategory={updatePendingCategory} />
-      </div>
-    </article>
-  );
-}
-
 function SeriesProgress({
   title,
   activeProfile,
@@ -1621,6 +1569,7 @@ function TitleDetailSheet({
 
         <div className="space-y-4 p-4">
           <RatingStrip title={title} />
+          <WatchStatusStrip title={title} activeProfile={activeProfile} />
 
           {detail?.trailerKey && (
             <a
@@ -1991,15 +1940,6 @@ function ProviderBadge({
       />
       {providerData?.shortName ?? provider}
       {type !== "included" && <span className="text-[var(--muted)]">{monetizationLabels[type]}</span>}
-    </span>
-  );
-}
-
-function Badge({ icon: Icon, children }: { icon: typeof Film; children: React.ReactNode }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/34 px-2.5 py-1.5 text-xs font-semibold text-[var(--text-soft)]">
-      <Icon size={13} />
-      {children}
     </span>
   );
 }
