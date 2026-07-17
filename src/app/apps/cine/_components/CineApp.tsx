@@ -1490,6 +1490,8 @@ function TodayView({
   const [kind, setKind] = useState<"all" | MediaKind>("all");
   const [maxMinutes, setMaxMinutes] = useState(0);
   const [minScore, setMinScore] = useState(0);
+  const [yearFrom, setYearFrom] = useState(0);
+  const [yearTo, setYearTo] = useState(0);
   const [selectedProviders, setSelectedProviders] = useState<ProviderKey[]>([]);
   const [genre, setGenre] = useState("");
   const [seed, setSeed] = useState(initialRouletteSeed);
@@ -1513,10 +1515,12 @@ function TodayView({
       if (selectedProviders.length && !selectedProviders.some((p) => title.availability.some((a) => a.provider === p))) return false;
       if (maxMinutes > 0 && title.runtimeMinutes && title.runtimeMinutes > maxMinutes) return false;
       if (minScore > 0 && blendedScore(title) < minScore) return false;
+      if (yearFrom > 0 && (!title.year || title.year < yearFrom)) return false;
+      if (yearTo > 0 && (!title.year || title.year > yearTo)) return false;
       if (genre && !title.genres.includes(genre)) return false;
       return true;
     });
-  }, [titles, effectiveScope, kind, activeProfile, selectedProviders, maxMinutes, minScore, genre]);
+  }, [titles, effectiveScope, kind, activeProfile, selectedProviders, maxMinutes, minScore, yearFrom, yearTo, genre]);
 
   // Pure roulette: 20 titles drawn at random from EVERYTHING that matches the
   // filters (not just the best-rated), reshuffled per "Otra ruleta". Quality
@@ -1620,6 +1624,21 @@ function TodayView({
           </span>
           <input type="range" min="0" max="10" step="1" value={minScore} onChange={(event) => setMinScore(Number(event.target.value))} className="w-full accent-[var(--gold)]" />
         </label>
+
+        <div className="grid grid-cols-2 gap-2">
+          <SelectField icon={CalendarDays} value={String(yearFrom)} onChange={(value) => setYearFrom(Number(value))}>
+            <option value="0">Desde: cualquiera</option>
+            {filterYears.map((year) => (
+              <option key={`hoy-from-${year}`} value={year}>Desde {year}</option>
+            ))}
+          </SelectField>
+          <SelectField icon={CalendarDays} value={String(yearTo)} onChange={(value) => setYearTo(Number(value))}>
+            <option value="0">Hasta: cualquiera</option>
+            {filterYears.map((year) => (
+              <option key={`hoy-to-${year}`} value={year}>Hasta {year}</option>
+            ))}
+          </SelectField>
+        </div>
 
         {mode === "ruleta" && (
           <button type="button" onClick={() => setSeed((value) => value + 1)} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--gold)] py-3 text-sm font-bold text-black">
