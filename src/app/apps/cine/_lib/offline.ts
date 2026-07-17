@@ -60,11 +60,13 @@ export function getPendingCount() {
   return read().length;
 }
 
-// Replays queued mutations in order. A server rejection (4xx) drops the item
-// (it will never succeed); a network error keeps the rest for the next attempt.
-export async function flushQueue(accessToken: string): Promise<number> {
+// Replays queued mutations in order. A server rejection drops the item (it
+// will never succeed) but is COUNTED so the UI can tell the user; a network
+// error keeps the rest for the next attempt.
+export async function flushQueue(accessToken: string): Promise<{ flushed: number; failed: number }> {
   const remaining = read();
   let flushed = 0;
+  let failed = 0;
 
   while (remaining.length) {
     const [next] = remaining;
@@ -72,13 +74,14 @@ export async function flushQueue(accessToken: string): Promise<number> {
       const response = await sendMutation(next.mutation, accessToken);
       remaining.shift();
       if (response.ok) flushed += 1;
+      else failed += 1;
       write(remaining);
     } catch {
       break;
     }
   }
 
-  return flushed;
+  return { flushed, failed };
 }
 
 function sendMutation(mutation: CineMutation, accessToken: string) {
