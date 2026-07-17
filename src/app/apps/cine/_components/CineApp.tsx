@@ -6,6 +6,7 @@ import {
   Clapperboard,
   CloudOff,
   Dices,
+  Download,
   ExternalLink,
   EyeOff,
   Film,
@@ -87,6 +88,41 @@ const initialRouletteSeed = Math.floor(Math.random() * 1_000_000);
 
 // Match mode: per-title yes/no of each user. Both liking => match.
 type MatchVoteMap = Record<string, { RR?: boolean; LB?: boolean }>;
+
+// Manual TMDB search candidates for "add a specific title".
+type AddCandidate = {
+  tmdbId: number;
+  kind: MediaKind;
+  title: string;
+  year: number | null;
+  posterPath: string;
+  tmdbRating: number | null;
+};
+
+// Backup of everything personal (ratings, watched, progress, pendings) as a
+// downloadable JSON. Client-side only: the data is already in memory.
+function exportBackup(titles: CineTitle[]) {
+  const interacted = titles.filter(hasCoupleInteraction);
+  const rows = interacted.map((title) => ({
+    tmdbId: title.tmdbId,
+    kind: title.kind,
+    title: title.title,
+    year: title.year,
+    RR: title.personal.RR,
+    LB: title.personal.LB,
+    pendientes: title.pendingCategories,
+  }));
+  const blob = new Blob(
+    [JSON.stringify({ exportedAt: new Date().toISOString(), total: rows.length, titles: rows }, null, 2)],
+    { type: "application/json" }
+  );
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `cine-copia-${new Date().toISOString().slice(0, 10)}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 // TV programs (reality, talk shows, news, soaps) and animation series are
 // filtered out of the whole app: not what this catalog is for. Titles the
@@ -177,6 +213,12 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
   const [trendingKeys, setTrendingKeys] = useState<string[]>([]);
   const [matchVotes, setMatchVotes] = useState<MatchVoteMap>({});
   const [matchCelebration, setMatchCelebration] = useState<CineTitle | null>(null);
+  // "Add a specific title" sheet: null = closed, string = the search query.
+  const [addQuery, setAddQuery] = useState<string | null>(null);
+  const [addResults, setAddResults] = useState<AddCandidate[]>([]);
+  const [addLoading, setAddLoading] = useState(false);
+  const [addCategory, setAddCategory] = useState<PendingCategory>("Para ver juntos");
+  const [addError, setAddError] = useState("");
   const [online, setOnline] = useState(true);
   const [pendingWrites, setPendingWrites] = useState(0);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
@@ -328,8 +370,11 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
     // Replay any queued offline writes now and whenever the connection returns.
     const flush = async () => {
       if (isOffline()) return;
-      const flushed = await flushQueue(accessToken);
-      if (flushed > 0) await loadCatalog();
+      const { flushed, failed } = await flushQueue(accessToken);
+      if (flushed > 0 || failed > 0) await loadCatalog();
+      if (failed > 0) {
+        setCatalogError(`${failed} cambio${failed === 1 ? "" : "s"} guardado${failed === 1 ? "" : "s"} sin conexion no se pudo aplicar en el servidor.`);
+      }
     };
     void flush();
     window.addEventListener("online", flush);
@@ -408,10 +453,12 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
         body: JSON.stringify(body),
       });
-      // On a server rejection re-sync so the UI never keeps an unpersisted change.
+      // On a server rejection re-sync so the UI never keeps an unpersisted
+      // change. Error set AFTER the reload (loadCatalog clears it on start).
       if (!response.ok) {
-        setCatalogError("No se pudo guardar el cambio. Recargando estado real.");
+        const payload = await response.json().catch(() => null);
         await loadCatalog();
+        setCatalogError(`No se pudo guardar el cambio: ${payload?.error ?? `error ${response.status}`}`);
       }
     } catch {
       // Network dropped mid-request: queue it instead of losing the change.
@@ -437,12 +484,59 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
-        setCatalogError(`No se pudo ocultar: ${payload?.error ?? `error ${response.status}`}`);
         await loadCatalog();
+        setCatalogError(`No se pudo ocultar: ${payload?.error ?? `error ${response.status}`}`);
       }
     } catch {
-      setCatalogError("Sin conexion: no se pudo ocultar el titulo.");
       await loadCatalog();
+      setCatalogError("Sin conexion: no se pudo ocultar el titulo.");
+    }
+  };
+
+  // "Someone recommended X": search TMDB by name to add it to the catalog.
+  const openAddTitle = async (query: string) => {
+    if (!accessToken) return;
+    setAddQuery(query);
+    setAddResults([]);
+    setAddError("");
+    setAddLoading(true);
+    try {
+      const response = await fetch("/api/cine/add-title", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ action: "search", query }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload) throw new Error(payload?.error ?? "No se pudo buscar en TMDB.");
+      setAddResults((payload.results ?? []) as AddCandidate[]);
+    } catch (error) {
+      setAddError(error instanceof Error ? error.message : "No se pudo buscar en TMDB.");
+    } finally {
+      setAddLoading(false);
+    }
+  };
+
+  const addTitleFromTmdb = async (candidate: AddCandidate) => {
+    if (!accessToken) return;
+    setAddLoading(true);
+    setAddError("");
+    try {
+      const response = await fetch("/api/cine/add-title", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ action: "add", tmdbId: candidate.tmdbId, mediaType: candidate.kind, category: addCategory }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload) throw new Error(payload?.error ?? "No se pudo anadir el titulo.");
+      setAddQuery(null);
+      writeSeqRef.current += 1;
+      await loadCatalog();
+      const availability = payload.availableOn > 0 ? "" : " (no esta incluida en vuestras plataformas: solo alquiler/compra)";
+      setSyncMessage(`"${candidate.title}" anadida al catalogo y a "${addCategory}".${availability}`);
+    } catch (error) {
+      setAddError(error instanceof Error ? error.message : "No se pudo anadir el titulo.");
+    } finally {
+      setAddLoading(false);
     }
   };
 
@@ -507,11 +601,12 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
         body: JSON.stringify(body),
       });
       if (!response.ok) {
-        // Surface the server error: silently reverting made pendings "vanish"
-        // with no clue about why.
+        // Surface the server error AFTER the reload — loadCatalog clears
+        // catalogError on start, which was wiping this message before the
+        // user could read it (pendings seemed to vanish with no explanation).
         const payload = await response.json().catch(() => null);
-        setCatalogError(`No se pudo guardar en pendientes: ${payload?.error ?? `error ${response.status}`}`);
         await loadCatalog();
+        setCatalogError(`No se pudo guardar en pendientes: ${payload?.error ?? `error ${response.status}`}`);
       }
     } catch {
       enqueueMutation({ kind: "pending", action, body });
@@ -718,12 +813,12 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
               titles={filteredTitles}
               filters={filters}
               setFilters={setFilters}
-
               markWatched={markWatched}
               activeProfile={activeProfile}
               updatePendingCategory={updatePendingCategory}
               openDetail={setDetailTitle}
               openRating={setRatingFor}
+              onAddTitle={openAddTitle}
             />
           )}
           {activeTab === "today" && (
@@ -828,6 +923,66 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
               >
                 Ver ficha
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {addQuery !== null && (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center">
+          <button type="button" aria-label="Cerrar" onClick={() => setAddQuery(null)} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+          <div className="relative z-10 flex max-h-[85vh] w-full max-w-[420px] flex-col overflow-y-auto rounded-t-3xl border border-white/10 bg-[var(--app-bg)] p-4 pb-[calc(env(safe-area-inset-bottom)+16px)] shadow-2xl shadow-black/60 sm:rounded-3xl">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="min-w-0">
+                <p className="text-lg font-semibold">Anadir de TMDB</p>
+                <p className="truncate text-xs text-[var(--muted)]">Resultados para &quot;{addQuery}&quot;</p>
+              </div>
+              <button type="button" onClick={() => setAddQuery(null)} className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-white/8 text-[var(--text-soft)]" aria-label="Cerrar">
+                <X size={18} />
+              </button>
+            </div>
+
+            <label className="mb-3 flex h-10 items-center gap-2 rounded-xl bg-black/24 px-2 text-sm">
+              <BookmarkPlus size={15} className="shrink-0 text-[var(--muted)]" />
+              <select
+                value={addCategory}
+                onChange={(event) => setAddCategory(event.target.value as PendingCategory)}
+                className="min-w-0 flex-1 bg-transparent text-[var(--text-soft)] outline-none"
+              >
+                {pendingCategories.map((item) => (
+                  <option key={item} value={item}>Guardar en: {item}</option>
+                ))}
+              </select>
+            </label>
+
+            {addLoading && <p className="py-4 text-center text-sm text-[var(--muted)]">Buscando en TMDB...</p>}
+            {addError && <p className="mb-2 rounded-xl bg-red-500/12 p-3 text-sm text-red-200">{addError}</p>}
+            {!addLoading && addResults.length === 0 && !addError && (
+              <p className="py-4 text-center text-sm text-[var(--muted)]">Sin resultados en TMDB para esa busqueda.</p>
+            )}
+
+            <div className="space-y-2">
+              {addResults.map((candidate) => (
+                <div key={`${candidate.kind}-${candidate.tmdbId}`} className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/6 p-2.5">
+                  <div
+                    className="h-16 w-11 shrink-0 rounded-lg bg-cover bg-center"
+                    style={{ backgroundImage: `url(https://image.tmdb.org/t/p/w185${candidate.posterPath})` }}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-semibold">{candidate.title}</p>
+                    <p className="text-xs text-[var(--muted)]">
+                      {[candidate.year, candidate.kind === "movie" ? "Pelicula" : "Serie", candidate.tmdbRating ? `TMDB ${candidate.tmdbRating}` : null].filter(Boolean).join(" - ")}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={addLoading}
+                    onClick={() => void addTitleFromTmdb(candidate)}
+                    className="shrink-0 rounded-lg bg-[var(--gold)] px-3 py-2 text-xs font-bold text-black disabled:opacity-50"
+                  >
+                    Anadir
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -1106,22 +1261,22 @@ function ExploreView({
   titles,
   filters,
   setFilters,
-
   markWatched,
   activeProfile,
   updatePendingCategory,
   openDetail,
-  openRating
+  openRating,
+  onAddTitle
 }: {
   titles: CineTitle[];
   filters: Filters;
   setFilters: React.Dispatch<React.SetStateAction<Filters>>;
-
   markWatched: (titleId: string, scope: "me" | "both") => void;
   activeProfile: ProfileKey;
   updatePendingCategory: (titleId: string, category: PendingCategory, action: "add" | "remove") => void;
   openDetail: (title: CineTitle) => void;
   openRating: (title: CineTitle) => void;
+  onAddTitle: (query: string) => void;
 }) {
   // Render the big list in pages: with 1000+ titles, mounting every card at
   // once makes this tab janky on mobile.
@@ -1249,6 +1404,16 @@ function ExploreView({
       </div>
 
       <p className="text-xs text-[var(--muted)]">{titles.length} resultados</p>
+
+      {filters.query.trim().length >= 3 && (
+        <button
+          type="button"
+          onClick={() => onAddTitle(filters.query.trim())}
+          className="w-full rounded-xl border border-dashed border-[var(--gold)]/40 bg-[var(--gold)]/8 py-2.5 text-sm font-semibold text-[var(--gold)] transition hover:bg-[var(--gold)]/15"
+        >
+          ¿No esta? Buscar &quot;{filters.query.trim()}&quot; en TMDB y anadirla
+        </button>
+      )}
 
       <div className="space-y-3">
         {visibleTitles.map((title) => (
@@ -1743,6 +1908,15 @@ function RatingsView({ titles }: { titles: CineTitle[] }) {
           </div>
         ))}
       </div>
+
+      <button
+        type="button"
+        onClick={() => exportBackup(titles)}
+        className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/6 py-3 text-sm font-semibold text-[var(--text-soft)] transition hover:bg-white/12"
+      >
+        <Download size={16} />
+        Descargar copia de vuestras notas (JSON)
+      </button>
     </div>
   );
 }
