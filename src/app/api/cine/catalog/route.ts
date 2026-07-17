@@ -8,6 +8,7 @@ type DbTitle = {
   media_type: MediaKind;
   title: string;
   original_title: string | null;
+  original_language: string | null;
   overview: string | null;
   poster_path: string;
   backdrop_path: string | null;
@@ -53,7 +54,7 @@ type DbPending = {
 export const dynamic = "force-dynamic";
 
 const pageSize = 1000;
-const titleSelect = "id, tmdb_id, media_type, title, original_title, overview, poster_path, backdrop_path, release_year, runtime_label, genres, tmdb_vote, tmdb_popularity, imdb_id, imdb_rating, imdb_votes, metascore, rt_tomatometer, runtime_minutes, ratings_updated_at, created_at, last_synced_at, search_titles";
+const titleSelect = "id, tmdb_id, media_type, title, original_title, original_language, overview, poster_path, backdrop_path, release_year, runtime_label, genres, tmdb_vote, tmdb_popularity, imdb_id, imdb_rating, imdb_votes, metascore, rt_tomatometer, runtime_minutes, ratings_updated_at, created_at, last_synced_at, search_titles";
 
 export async function GET(request: Request) {
   const auth = await requireCineProfile(request);
@@ -118,6 +119,7 @@ function mapTitles(
       tmdbId: title.tmdb_id,
       title: cleanText(title.title),
       originalTitle: cleanText(title.original_title ?? undefined),
+      originalLanguage: title.original_language ?? undefined,
       searchTitles: unique([...(title.search_titles ?? []), title.original_title ?? ""].map(cleanText).filter(Boolean)),
       kind: title.media_type,
       year: title.release_year ?? 0,
