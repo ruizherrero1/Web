@@ -62,6 +62,7 @@ export type CineTitle = {
   tmdbId?: number;
   title: string;
   originalTitle?: string;
+  originalLanguage?: string;
   searchTitles?: string[];
   kind: MediaKind;
   year: number;

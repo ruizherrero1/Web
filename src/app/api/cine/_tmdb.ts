@@ -7,6 +7,7 @@ type TmdbItem = {
   name?: string;
   original_title?: string;
   original_name?: string;
+  original_language?: string;
   overview?: string;
   poster_path?: string | null;
   backdrop_path?: string | null;
@@ -23,6 +24,7 @@ export type TmdbCatalogTitle = {
   media_type: MediaKind;
   title: string;
   original_title?: string;
+  original_language: string | null;
   overview: string;
   poster_path: string;
   backdrop_path: string;
@@ -36,6 +38,22 @@ export type TmdbCatalogTitle = {
   last_synced_at: string;
   availability: Availability[];
 };
+
+// Owner preference: the ES streaming listings are flooded with Asian-market
+// content (Chinese/Korean/Indian dramas etc.) they will never watch. Titles in
+// these original languages are only imported when they genuinely broke through
+// in the West, using TMDB vote count (a mostly Western userbase) as the proxy —
+// Parasite/Squid Game-tier survives, the filler does not.
+const asianOriginalLanguages = new Set([
+  "zh", "cn", "ko", "ja", "hi", "ta", "te", "ml", "kn", "bn", "mr", "pa", "gu",
+  "ur", "th", "vi", "id", "ms", "tl", "fil", "km", "my", "lo", "si", "ne",
+]);
+const asianKeepMinVotes = 500;
+
+function passesWesternFilter(item: TmdbItem) {
+  if (!item.original_language || !asianOriginalLanguages.has(item.original_language)) return true;
+  return (item.vote_count ?? 0) >= asianKeepMinVotes;
+}
 
 const movieGenres = new Map<number, string>();
 const tvGenres = new Map<number, string>();
@@ -90,6 +108,7 @@ export async function loadTmdbCatalogForSync(pagesPerProvider: number) {
 
           for (const item of allItems.values()) {
             if (!item.poster_path) continue;
+            if (!passesWesternFilter(item)) continue;
             const title = mapTmdbItem(item, spanishById.get(item.id), mediaType, provider, syncedAt);
             const key = `${title.media_type}-${title.tmdb_id}`;
             const existing = deduped.get(key);
@@ -172,6 +191,7 @@ function mapTmdbItem(
     media_type: mediaType,
     title: englishTitle,
     original_title: spanishTitle && spanishTitle !== englishTitle ? spanishTitle : originalTitle,
+    original_language: item.original_language ?? null,
     overview: cleanText(item.overview ?? spanishItem?.overview ?? ""),
     poster_path: item.poster_path ?? spanishItem?.poster_path ?? "",
     backdrop_path: item.backdrop_path ?? spanishItem?.backdrop_path ?? "",

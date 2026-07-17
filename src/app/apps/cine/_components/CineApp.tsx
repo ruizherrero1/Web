@@ -218,9 +218,14 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
         return;
       }
 
-      const nextTitles = ((payload.titles ?? []) as CineTitle[]).filter(
-        (title) => !isNoiseTitle(title) || hasCoupleInteraction(title)
-      );
+      const nextTitles = ((payload.titles ?? []) as CineTitle[]).filter((title) => {
+        if (hasCoupleInteraction(title)) return true;
+        if (isNoiseTitle(title)) return false;
+        // No availability = the importer no longer brings it in (western filter
+        // or delisted from every platform): drop the leftover row.
+        if (title.availability.length === 0) return false;
+        return true;
+      });
       setTitles(nextTitles);
       setLastSyncedAt((payload.lastSyncedAt as string | null) ?? null);
 
