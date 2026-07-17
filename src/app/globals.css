@@ -199,6 +199,13 @@ body[data-mundial-standalone="true"] main {
   font-size: 16px;
 }
 
+/* El area de la barra de estado (safe-area superior) y el overscroll muestran
+   el fondo del body; el del sitio es claro y en Cine se veia una franja blanca
+   arriba en el movil. Dentro de Cine, el body se pinta oscuro. */
+body:has(.cine-app-shell) {
+  background-color: #050404;
+}
+
 /* Cine como app instalada: al abrir desde el icono de inicio (display-mode:
    standalone) se oculta la cabecera/pie del sitio para que se vea como app. */
 @media (display-mode: standalone), (display-mode: fullscreen) {
