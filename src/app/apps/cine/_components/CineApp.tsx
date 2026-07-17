@@ -32,7 +32,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { demoTitles, pendingCategories, profiles, providers } from "../_lib/cine-data";
 import { CINE_QUEUE_CHANGED, enqueueMutation, flushQueue, getPendingCount } from "../_lib/offline";
-import type { CineTitle, MediaKind, MonetizationType, PendingCategory, PersonalState, ProfileKey, ProviderKey, TitleDetail, WatchStatus } from "../_lib/types";
+import type { CineTitle, MediaKind, MonetizationType, PendingCategory, ProfileKey, ProviderKey, TitleDetail, WatchStatus } from "../_lib/types";
 
 function isOffline() {
   return typeof navigator !== "undefined" && !navigator.onLine;
@@ -188,13 +188,6 @@ const monetizationLabels: Record<MonetizationType, string> = {
   included: "Incluido",
   rent: "Alquiler",
   buy: "Compra"
-};
-
-const watchStatusLabels: Record<WatchStatus, string> = {
-  none: "Pendiente",
-  watching: "Viendo",
-  watched: "Vista",
-  abandoned: "Abandonada"
 };
 
 export function CineApp({ currentProfile, accessToken, onSignOut }: { currentProfile?: ProfileKey; accessToken?: string; onSignOut?: () => void }) {
@@ -2035,21 +2028,34 @@ function TitleDetailSheet({
       }
     : title;
 
+  const mine = title.personal[activeProfile];
+  const partnerKey: ProfileKey = activeProfile === "RR" ? "LB" : "RR";
+  const partner = title.personal[partnerKey];
+  const bothWatched = title.personal.RR.status === "watched" && title.personal.LB.status === "watched";
+  // One muted line keeps the partner's state visible without a separate widget.
+  const partnerNote =
+    !bothWatched && partner.status === "watched"
+      ? `${partnerKey} la vio${partner.watchedAt ? ` el ${formatShortDate(partner.watchedAt)}` : ""}`
+      : partner.status === "watching" && (partner.season || partner.episode)
+        ? `${partnerKey} va por T${partner.season ?? "?"} E${partner.episode ?? "?"}`
+        : "";
+
   return (
     <div className="fixed inset-0 z-50 flex justify-center">
       <button type="button" aria-label="Cerrar ficha" onClick={onClose} className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
       <div className="relative z-10 mt-auto flex max-h-[92vh] w-full max-w-[520px] flex-col overflow-y-auto rounded-t-3xl border border-white/10 bg-[var(--app-bg)] pb-[calc(env(safe-area-inset-bottom)+16px)] shadow-2xl shadow-black/60">
+        {/* Sticky close: stays pinned top-right while the sheet scrolls. */}
+        <div className="sticky top-0 z-20 -mb-[60px] flex items-start justify-between p-3">
+          <span className="h-1.5 w-12 rounded-full bg-white/25" />
+          <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full bg-black/60 text-white backdrop-blur" aria-label="Cerrar">
+            <X size={18} />
+          </button>
+        </div>
         <div
           className="min-h-[220px] bg-cover bg-center"
           style={{ backgroundImage: `linear-gradient(180deg, rgba(8,7,7,0.2), rgba(8,7,7,0.94) 78%), url(https://image.tmdb.org/t/p/w780${title.backdropPath || title.posterPath})` }}
         >
-          <div className="flex items-start justify-between p-3">
-            <span className="h-1.5 w-12 rounded-full bg-white/25" />
-            <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full bg-black/50 text-white" aria-label="Cerrar">
-              <X size={18} />
-            </button>
-          </div>
-          <div className="px-4 pb-4 pt-16">
+          <div className="px-4 pb-4 pt-[76px]">
             <h2 className="text-2xl font-semibold leading-tight">{title.title}</h2>
             {title.originalTitle && title.originalTitle !== title.title && (
               <p className="mt-1 text-sm font-semibold text-[var(--gold)]">{title.originalTitle}</p>
@@ -2062,22 +2068,9 @@ function TitleDetailSheet({
         </div>
 
         <div className="space-y-4 p-4">
+          {/* Owner-requested order: ratings, availability, watched/rating,
+              pending, then trailer/summary/cast, hide last. */}
           <RatingStrip title={ratedTitle} />
-          <WatchStatusStrip title={title} activeProfile={activeProfile} />
-
-          {detail?.trailerKey && (
-            <a
-              href={`https://www.youtube.com/watch?v=${detail.trailerKey}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--gold)] py-3 text-sm font-bold text-black"
-            >
-              <Play size={18} />
-              Ver trailer
-            </a>
-          )}
-
-          {overview && <p className="text-sm leading-6 text-[var(--text-soft)]">{overview}</p>}
 
           {detailProviders.length > 0 && (
             <div>
@@ -2100,6 +2093,48 @@ function TitleDetailSheet({
               </div>
             </div>
           )}
+
+          {/* The buttons ARE the status display: marked style + watch date when
+              on, tap again to unmark (the pills widget they replaced is gone). */}
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => markWatched(title.id, "me")}
+              className={`action-button ${mine.status === "watched" ? "action-button-done" : ""}`}
+            >
+              <Check size={18} />
+              {mine.status === "watched" ? `Vista${mine.watchedAt ? ` · ${formatShortDate(mine.watchedAt)}` : ""}` : "Vista por mi"}
+            </button>
+            <button
+              type="button"
+              onClick={() => markWatched(title.id, "both")}
+              className={`action-button action-button-gold ${bothWatched ? "action-button-done" : ""}`}
+            >
+              <Users size={18} />
+              {bothWatched ? "Vista por ambos" : "Vista ambos"}
+            </button>
+          </div>
+          {partnerNote && <p className="text-center text-xs text-[var(--muted)]">{partnerNote}</p>}
+
+          {title.kind === "series" && (
+            <SeriesProgress title={title} activeProfile={activeProfile} updateProgress={updateProgress} />
+          )}
+          <NotaButton title={title} activeProfile={activeProfile} openRating={openRating} />
+          <PendingCategoryControls title={title} updatePendingCategory={updatePendingCategory} />
+
+          {detail?.trailerKey && (
+            <a
+              href={`https://www.youtube.com/watch?v=${detail.trailerKey}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--gold)] py-3 text-sm font-bold text-black"
+            >
+              <Play size={18} />
+              Ver trailer
+            </a>
+          )}
+
+          {overview && <p className="text-sm leading-6 text-[var(--text-soft)]">{overview}</p>}
 
           {detail && detail.directors.length > 0 && (
             <p className="text-sm text-[var(--text-soft)]">
@@ -2129,29 +2164,6 @@ function TitleDetailSheet({
           {loading && <p className="text-sm text-[var(--muted)]">Cargando ficha...</p>}
           {error && <p className="rounded-xl bg-red-500/12 p-3 text-sm text-red-200">{error}</p>}
 
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => markWatched(title.id, "me")}
-              className={`action-button ${title.personal[activeProfile].status === "watched" ? "action-button-done" : ""}`}
-            >
-              <Check size={18} />
-              Vista por mi
-            </button>
-            <button
-              type="button"
-              onClick={() => markWatched(title.id, "both")}
-              className={`action-button action-button-gold ${title.personal.RR.status === "watched" && title.personal.LB.status === "watched" ? "action-button-done" : ""}`}
-            >
-              <Users size={18} />
-              Vista ambos
-            </button>
-          </div>
-          {title.kind === "series" && (
-            <SeriesProgress title={title} activeProfile={activeProfile} updateProgress={updateProgress} />
-          )}
-          <NotaButton title={title} activeProfile={activeProfile} openRating={openRating} />
-          <PendingCategoryControls title={title} updatePendingCategory={updatePendingCategory} />
           <button
             type="button"
             onClick={() => hideTitle(title)}
@@ -2292,47 +2304,6 @@ function Poster({ title, size = "normal" }: { title: CineTitle; size?: "small" |
   );
 }
 
-function WatchStatusStrip({
-  title,
-  activeProfile,
-  compact = false
-}: {
-  title: CineTitle;
-  activeProfile?: ProfileKey;
-  compact?: boolean;
-}) {
-  const bothWatched = title.personal.RR.status === "watched" && title.personal.LB.status === "watched";
-  const activeWatched = activeProfile ? title.personal[activeProfile].status === "watched" : false;
-  const summary = bothWatched
-    ? "Vista por ambos"
-    : activeWatched && activeProfile
-      ? `Vista por ${activeProfile}`
-      : "Pendiente por alguno";
-
-  return (
-    <div className={`${compact ? "mt-2" : ""} rounded-xl border border-white/8 bg-black/24 p-2`}>
-      {!compact && <p className="mb-2 text-xs font-semibold text-[var(--gold)]">{summary}</p>}
-      <div className="grid grid-cols-2 gap-2">
-        <StatusPill label="RR" state={title.personal.RR} />
-        <StatusPill label="LB" state={title.personal.LB} />
-      </div>
-    </div>
-  );
-}
-
-function StatusPill({ label, state }: { label: ProfileKey; state: PersonalState }) {
-  const isWatched = state.status === "watched";
-  const progress = state.status === "watching" && (state.season || state.episode)
-    ? ` T${state.season ?? "?"} E${state.episode ?? "?"}`
-    : "";
-  return (
-    <div className={`rounded-lg px-2 py-1.5 ${isWatched ? "bg-[rgba(68,209,157,0.16)] text-[#92f0c9]" : "bg-white/6 text-[var(--muted)]"}`}>
-      <p className="text-[10px] font-black">{label}</p>
-      <p className="text-xs font-semibold">{watchStatusLabels[state.status]}{progress}</p>
-      {state.watchedAt && <p className="text-[10px] opacity-75">{state.watchedAt}</p>}
-    </div>
-  );
-}
 function RatingStrip({ title }: { title: CineTitle }) {
   return (
     <div className="grid grid-cols-4 gap-2">
@@ -2576,6 +2547,12 @@ function formatRelativeTime(iso: string) {
   if (hours < 24) return `hace ${hours} hora${hours === 1 ? "" : "s"}`;
   const days = Math.floor(hours / 24);
   return `hace ${days} dia${days === 1 ? "" : "s"}`;
+}
+
+// "2026-07-17" -> "17/07/26"
+function formatShortDate(iso: string) {
+  if (iso.length < 10) return iso;
+  return `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(2, 4)}`;
 }
 
 function formatRuntime(minutes: number) {
