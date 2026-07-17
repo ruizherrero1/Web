@@ -2,6 +2,7 @@
 
 import {
   BookmarkPlus,
+  CalendarDays,
   Check,
   Clapperboard,
   CloudOff,
@@ -55,6 +56,9 @@ type Filters = {
   monetization: "all" | MonetizationType;
   ratingSource: RatingSource;
   minScore: number;
+  // Release year range; 0 = no limit on that side.
+  yearFrom: number;
+  yearTo: number;
   watch: WatchFilter;
   sort: SortKey;
 };
@@ -66,9 +70,17 @@ const initialFilters: Filters = {
   monetization: "all",
   ratingSource: "tmdb",
   minScore: 0,
+  yearFrom: 0,
+  yearTo: 0,
   watch: "all",
   sort: "top_rated"
 };
+
+// Year options for the release-date filter, newest first.
+const filterYears = Array.from(
+  { length: new Date().getFullYear() - 1950 + 1 },
+  (_, index) => new Date().getFullYear() - index
+);
 
 const ratingSources: Record<RatingSource, { label: string; unit: "ten" | "percent" }> = {
   tmdb: { label: "TMDB", unit: "ten" },
@@ -417,6 +429,8 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
           const score = scoreForSource(title, filters.ratingSource);
           if (score === undefined || score < filters.minScore) return false;
         }
+        if (filters.yearFrom > 0 && (!title.year || title.year < filters.yearFrom)) return false;
+        if (filters.yearTo > 0 && (!title.year || title.year > filters.yearTo)) return false;
         if (!passesWatchFilter(title, filters.watch, activeProfile)) return false;
         return true;
       })
@@ -1393,6 +1407,28 @@ function ExploreView({
               className="w-full accent-[var(--gold)]"
             />
           </label>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <SelectField
+            icon={CalendarDays}
+            value={String(filters.yearFrom)}
+            onChange={(value) => setFilters((current) => ({ ...current, yearFrom: Number(value) }))}
+          >
+            <option value="0">Desde: cualquiera</option>
+            {filterYears.map((year) => (
+              <option key={`from-${year}`} value={year}>Desde {year}</option>
+            ))}
+          </SelectField>
+          <SelectField
+            icon={CalendarDays}
+            value={String(filters.yearTo)}
+            onChange={(value) => setFilters((current) => ({ ...current, yearTo: Number(value) }))}
+          >
+            <option value="0">Hasta: cualquiera</option>
+            {filterYears.map((year) => (
+              <option key={`to-${year}`} value={year}>Hasta {year}</option>
+            ))}
+          </SelectField>
         </div>
       </div>
 
