@@ -64,75 +64,101 @@ const tvGenres = new Map<number, string>();
 // well under that.
 const pageConcurrency = 8;
 
+// English-only backfill: the western filter throws away the Asian portion of
+// each page, so an extra pass restricted to with_original_language=en digs
+// deeper into western content without wasting page slots.
+function getEnglishBackfillPages() {
+  const configured = Number(process.env.CINE_TMDB_EN_EXTRA_PAGES ?? 12);
+  return Number.isFinite(configured) ? Math.min(Math.max(configured, 0), 25) : 12;
+}
+
 export async function loadTmdbCatalogForSync(pagesPerProvider: number) {
   await loadGenres();
 
   const syncedAt = new Date().toISOString();
   const deduped = new Map<string, TmdbCatalogTitle>();
-  let requestedPages = 0;
+  const counter = { requestedPages: 0 };
+  const englishExtraPages = getEnglishBackfillPages();
 
   for (const [provider, tmdbProviderId] of Object.entries(providerTmdbIds) as Array<[ProviderKey, number]>) {
     for (const mediaType of ["movie", "series"] as const) {
-      const endpointType = mediaType === "movie" ? "movie" : "tv";
-      let nextPage = 1;
-      let exhausted = false;
-
-      while (!exhausted && nextPage <= pagesPerProvider) {
-        const wave: number[] = [];
-        while (wave.length < pageConcurrency && nextPage <= pagesPerProvider) {
-          wave.push(nextPage);
-          nextPage += 1;
-        }
-
-        const results = await Promise.all(
-          wave.map(async (page) => {
-            const [englishResults, spanishResults] = await Promise.all([
-              tmdbDiscover(endpointType, tmdbProviderId, page, "en-US"),
-              tmdbDiscover(endpointType, tmdbProviderId, page, "es-ES"),
-            ]);
-            return { englishResults, spanishResults };
-          })
-        );
-        requestedPages += wave.length * 2;
-
-        for (const { englishResults, spanishResults } of results) {
-          if (englishResults.length === 0 && spanishResults.length === 0) {
-            exhausted = true;
-            continue;
-          }
-
-          const spanishById = new Map(spanishResults.map((item) => [item.id, item]));
-          const allItems = new Map<number, TmdbItem>();
-          for (const item of englishResults) allItems.set(item.id, item);
-          for (const item of spanishResults) if (!allItems.has(item.id)) allItems.set(item.id, item);
-
-          for (const item of allItems.values()) {
-            if (!item.poster_path) continue;
-            if (!passesWesternFilter(item)) continue;
-            const title = mapTmdbItem(item, spanishById.get(item.id), mediaType, provider, syncedAt);
-            const key = `${title.media_type}-${title.tmdb_id}`;
-            const existing = deduped.get(key);
-            if (existing) {
-              existing.availability = mergeAvailability(existing.availability, title.availability[0]);
-              existing.tmdb_popularity = Math.max(existing.tmdb_popularity, title.tmdb_popularity);
-              existing.search_titles = unique([...existing.search_titles, ...title.search_titles]);
-            } else {
-              deduped.set(key, title);
-            }
-          }
-        }
+      await importDiscoverPages(deduped, counter, provider, tmdbProviderId, mediaType, pagesPerProvider, syncedAt);
+      if (englishExtraPages > 0) {
+        await importDiscoverPages(deduped, counter, provider, tmdbProviderId, mediaType, englishExtraPages, syncedAt, "en");
       }
     }
   }
 
-  return { titles: [...deduped.values()], requestedPages, syncedAt };
+  return { titles: [...deduped.values()], requestedPages: counter.requestedPages, syncedAt };
+}
+
+async function importDiscoverPages(
+  deduped: Map<string, TmdbCatalogTitle>,
+  counter: { requestedPages: number },
+  provider: ProviderKey,
+  tmdbProviderId: number,
+  mediaType: MediaKind,
+  maxPages: number,
+  syncedAt: string,
+  originalLanguage?: string
+) {
+  const endpointType = mediaType === "movie" ? "movie" : "tv";
+  let nextPage = 1;
+  let exhausted = false;
+
+  while (!exhausted && nextPage <= maxPages) {
+    const wave: number[] = [];
+    while (wave.length < pageConcurrency && nextPage <= maxPages) {
+      wave.push(nextPage);
+      nextPage += 1;
+    }
+
+    const results = await Promise.all(
+      wave.map(async (page) => {
+        const [englishResults, spanishResults] = await Promise.all([
+          tmdbDiscover(endpointType, tmdbProviderId, page, "en-US", originalLanguage),
+          tmdbDiscover(endpointType, tmdbProviderId, page, "es-ES", originalLanguage),
+        ]);
+        return { englishResults, spanishResults };
+      })
+    );
+    counter.requestedPages += wave.length * 2;
+
+    for (const { englishResults, spanishResults } of results) {
+      if (englishResults.length === 0 && spanishResults.length === 0) {
+        exhausted = true;
+        continue;
+      }
+
+      const spanishById = new Map(spanishResults.map((item) => [item.id, item]));
+      const allItems = new Map<number, TmdbItem>();
+      for (const item of englishResults) allItems.set(item.id, item);
+      for (const item of spanishResults) if (!allItems.has(item.id)) allItems.set(item.id, item);
+
+      for (const item of allItems.values()) {
+        if (!item.poster_path) continue;
+        if (!passesWesternFilter(item)) continue;
+        const title = mapTmdbItem(item, spanishById.get(item.id), mediaType, provider, syncedAt);
+        const key = `${title.media_type}-${title.tmdb_id}`;
+        const existing = deduped.get(key);
+        if (existing) {
+          existing.availability = mergeAvailability(existing.availability, title.availability[0]);
+          existing.tmdb_popularity = Math.max(existing.tmdb_popularity, title.tmdb_popularity);
+          existing.search_titles = unique([...existing.search_titles, ...title.search_titles]);
+        } else {
+          deduped.set(key, title);
+        }
+      }
+    }
+  }
 }
 
 async function tmdbDiscover(
   endpointType: "movie" | "tv",
   providerId: number,
   page: number,
-  language: "en-US" | "es-ES"
+  language: "en-US" | "es-ES",
+  originalLanguage?: string
 ): Promise<TmdbItem[]> {
   const auth = getTmdbAuth();
   const params = new URLSearchParams({
@@ -144,6 +170,7 @@ async function tmdbDiscover(
     sort_by: "popularity.desc",
     page: String(page),
   });
+  if (originalLanguage) params.set("with_original_language", originalLanguage);
   const url = appendQuery(`https://api.themoviedb.org/3/discover/${endpointType}?${params.toString()}`, auth.query);
   const response = await fetch(url, { headers: auth.headers, cache: "no-store" });
   if (!response.ok) throw new Error(`TMDB discover failed: ${response.status}`);
