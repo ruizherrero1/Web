@@ -55,6 +55,16 @@ function passesWesternFilter(item: TmdbItem) {
   return (item.vote_count ?? 0) >= asianKeepMinVotes;
 }
 
+// Quality gate (owner preference): anything rated below 5 on TMDB is not worth
+// their evening — keep the catalog good by construction. Unrated items (0)
+// are also skipped; a genuinely good new release picks up votes within days
+// and enters on a later sync.
+const minTmdbVote = 5;
+
+function passesQualityGate(item: TmdbItem) {
+  return (item.vote_average ?? 0) >= minTmdbVote;
+}
+
 const movieGenres = new Map<number, string>();
 const tvGenres = new Map<number, string>();
 
@@ -138,6 +148,7 @@ async function importDiscoverPages(
       for (const item of allItems.values()) {
         if (!item.poster_path) continue;
         if (!passesWesternFilter(item)) continue;
+        if (!passesQualityGate(item)) continue;
         const title = mapTmdbItem(item, spanishById.get(item.id), mediaType, provider, syncedAt);
         const key = `${title.media_type}-${title.tmdb_id}`;
         const existing = deduped.get(key);

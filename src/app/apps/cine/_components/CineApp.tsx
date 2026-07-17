@@ -224,6 +224,15 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
         // No availability = the importer no longer brings it in (western filter
         // or delisted from every platform): drop the leftover row.
         if (title.availability.length === 0) return false;
+        // Quality gate: nothing rated below 5 in every known source is worth
+        // browsing (mirrors the importer's TMDB >= 5 rule for older rows).
+        const bestKnown = Math.max(
+          title.imdbRating ?? 0,
+          title.tmdbRating ?? 0,
+          (title.rtTomatometer ?? 0) / 10,
+          (title.metascore ?? 0) / 10
+        );
+        if (bestKnown < 5) return false;
         return true;
       });
       setTitles(nextTitles);
@@ -1324,7 +1333,9 @@ function TodayView({
     return [...candidates]
       .sort((left, right) => seededJitter(right.id, seed) - seededJitter(left.id, seed))
       .slice(0, 20)
-      .map((title) => ({ title, score: Math.min(10, blendedScore(title)) }));
+      // The bubble shows a REAL rating (IMDb, else TMDB), never the internal
+      // ranking fallback — it used to display a made-up 4 for unrated titles.
+      .map((title) => ({ title, score: title.imdbRating ?? title.tmdbRating ?? null }));
   }, [candidates, seed]);
 
   // Match queue: filtered candidates the active user hasn't voted yet, in a
@@ -1442,7 +1453,7 @@ function TodayView({
                   </div>
                 </div>
                 <div className="flex flex-col items-center gap-1">
-                  <div className="grid h-11 w-11 place-items-center rounded-full bg-[var(--gold)] text-sm font-black text-black">{score.toFixed(1)}</div>
+                  <div className="grid h-11 w-11 place-items-center rounded-full bg-[var(--gold)] text-sm font-black text-black">{score !== null ? score.toFixed(1) : "-"}</div>
                   <button type="button" onClick={() => openDetail(title)} className="text-[10px] font-semibold text-[var(--muted)]">Ficha</button>
                 </div>
               </div>
