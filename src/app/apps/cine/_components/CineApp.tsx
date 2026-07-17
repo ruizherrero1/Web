@@ -224,15 +224,13 @@ export function CineApp({ currentProfile, accessToken, onSignOut }: { currentPro
         // No availability = the importer no longer brings it in (western filter
         // or delisted from every platform): drop the leftover row.
         if (title.availability.length === 0) return false;
-        // Quality gate: nothing rated below 5 in every known source is worth
-        // browsing (mirrors the importer's TMDB >= 5 rule for older rows).
-        const bestKnown = Math.max(
-          title.imdbRating ?? 0,
-          title.tmdbRating ?? 0,
-          (title.rtTomatometer ?? 0) / 10,
-          (title.metascore ?? 0) / 10
-        );
-        if (bestKnown < 5) return false;
+        // Quality gate: IMDb is the trusted source when it exists (TMDB inflates
+        // junk — e.g. IMDb 4.0 vs TMDB 5.7). Fall back to TMDB, then RT/Meta.
+        const quality =
+          title.imdbRating ??
+          title.tmdbRating ??
+          Math.max((title.rtTomatometer ?? 0) / 10, (title.metascore ?? 0) / 10);
+        if (quality < 5) return false;
         return true;
       });
       setTitles(nextTitles);
@@ -1335,7 +1333,12 @@ function TodayView({
       .slice(0, 20)
       // The bubble shows a REAL rating (IMDb, else TMDB), never the internal
       // ranking fallback — it used to display a made-up 4 for unrated titles.
-      .map((title) => ({ title, score: title.imdbRating ?? title.tmdbRating ?? null }));
+      // The source label prevents "TMDB says 5.7, bubble says 4" confusion.
+      .map((title) => ({
+        title,
+        score: title.imdbRating ?? title.tmdbRating ?? null,
+        scoreSource: title.imdbRating ? "IMDb" : title.tmdbRating ? "TMDB" : "",
+      }));
   }, [candidates, seed]);
 
   // Match queue: filtered candidates the active user hasn't voted yet, in a
@@ -1438,7 +1441,7 @@ function TodayView({
           </p>
         ) : (
           <div className="space-y-2">
-            {picks.map(({ title, score }) => (
+            {picks.map(({ title, score, scoreSource }) => (
               <div key={title.id} className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/6 p-3">
                 <button type="button" onClick={() => openDetail(title)} className="shrink-0">
                   <Poster title={title} size="small" />
@@ -1452,8 +1455,9 @@ function TodayView({
                     ))}
                   </div>
                 </div>
-                <div className="flex flex-col items-center gap-1">
+                <div className="flex flex-col items-center gap-0.5">
                   <div className="grid h-11 w-11 place-items-center rounded-full bg-[var(--gold)] text-sm font-black text-black">{score !== null ? score.toFixed(1) : "-"}</div>
+                  {scoreSource && <span className="text-[9px] font-semibold text-[var(--muted)]">{scoreSource}</span>}
                   <button type="button" onClick={() => openDetail(title)} className="text-[10px] font-semibold text-[var(--muted)]">Ficha</button>
                 </div>
               </div>
