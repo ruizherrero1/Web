@@ -1819,6 +1819,7 @@ function TitleDetailSheet({
   hideTitle: (title: CineTitle) => void;
 }) {
   const [detail, setDetail] = useState<TitleDetail | null>(null);
+  const [freshRatings, setFreshRatings] = useState<{ imdbRating: number | null; metascore: number | null } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -1836,6 +1837,8 @@ function TitleDetailSheet({
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error ?? "No se pudo cargar la ficha.");
         setDetail(payload.detail as TitleDetail);
+        // The route enriches missing IMDb/Metacritic from OMDb on demand.
+        if (payload.ratings) setFreshRatings(payload.ratings as { imdbRating: number | null; metascore: number | null });
       } catch (err) {
         if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "No se pudo cargar la ficha.");
       } finally {
@@ -1849,6 +1852,14 @@ function TitleDetailSheet({
   const runtime = detail?.runtimeMinutes ?? title.runtimeMinutes;
   const overview = detail?.overview || title.overview;
   const detailProviders = detail?.flatrateProviders.length ? detail.flatrateProviders : title.availability.map((item) => item.provider);
+  // Ratings freshly fetched by the route win over the (possibly stale) catalog copy.
+  const ratedTitle: CineTitle = freshRatings
+    ? {
+        ...title,
+        imdbRating: freshRatings.imdbRating ?? title.imdbRating,
+        metascore: freshRatings.metascore ?? title.metascore,
+      }
+    : title;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-center">
@@ -1877,7 +1888,7 @@ function TitleDetailSheet({
         </div>
 
         <div className="space-y-4 p-4">
-          <RatingStrip title={title} />
+          <RatingStrip title={ratedTitle} />
           <WatchStatusStrip title={title} activeProfile={activeProfile} />
 
           {detail?.trailerKey && (
