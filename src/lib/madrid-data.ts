@@ -4,6 +4,7 @@ import type {
   MadridData,
   MadridMatch,
   MadridResult,
+  MatchDetail,
   Scorer,
   SquadPlayer,
   StandingRow,
@@ -331,6 +332,14 @@ async function buildMadridData(): Promise<MadridData> {
     usedSeason = recent.length > 0 ? season - 1 : season;
   }
 
+  // Cruza con footballdata.io por fecha para poder abrir el detalle del partido.
+  const detailIndex = await getFdioMatchIndex();
+  if (Object.keys(detailIndex).length > 0) {
+    matches = matches.map((match) =>
+      detailIndex[match.date] ? { ...match, detailId: detailIndex[match.date] } : match,
+    );
+  }
+
   return {
     matches,
     season: usedSeason,
@@ -490,6 +499,159 @@ async function getFdioByName(): Promise<Map<string, FdioAgg>> {
     for (const key of entry.keys) byName.set(key, agg);
   }
   return byName;
+}
+
+// Indice fecha -> match_id de footballdata.io, para poder abrir el detalle de
+// un partido del calendario (que viene de ESPN, con otros ids).
+type FdioTeamMatch = { match_id?: number; match_date?: string; date_unix?: number };
+
+async function fetchFdioMatchIndex(): Promise<Record<string, number>> {
+  const key = process.env.FOOTBALLDATA_IO_KEY;
+  if (!key) return {};
+  try {
+    const response = await fetch(`${FDIO_BASE}/teams/${FDIO_TEAM_ID}/matches?limit=100`, {
+      headers: { Authorization: `Bearer ${key}` },
+      next: { revalidate: 21600 }, // 6 h
+    });
+    if (!response.ok) throw new Error(`footballdata.io matches HTTP ${response.status}`);
+    const json = (await response.json()) as { data?: FdioTeamMatch[] | { matches?: FdioTeamMatch[] } };
+    const rows = Array.isArray(json.data) ? json.data : json.data?.matches ?? [];
+    const index: Record<string, number> = {};
+    for (const row of rows) {
+      if (row.match_id == null) continue;
+      if (row.match_date) index[row.match_date.slice(0, 10)] = row.match_id;
+      if (row.date_unix) index[new Date(row.date_unix * 1000).toISOString().slice(0, 10)] = row.match_id;
+    }
+    return index;
+  } catch (error) {
+    console.warn("[madrid] footballdata.io match index unavailable:", error);
+    return {};
+  }
+}
+
+const getFdioMatchIndex = unstable_cache(fetchFdioMatchIndex, ["madrid-fdio-match-index-v1"], {
+  revalidate: 21600,
+});
+
+// --- Detalle de un partido (footballdata.io) ---
+type FdioLineupPlayer = {
+  known_name?: string;
+  player_name?: string;
+  shirt_number?: number | null;
+  position_name?: string | null;
+  player_image?: string | null;
+};
+type FdioMatchDetailRaw = {
+  match_id?: number;
+  game_week?: number | null;
+  league?: { league_name?: string | null; name?: string | null };
+  home_team?: { team_name?: string | null; team_logo?: string | null };
+  away_team?: { team_name?: string | null; team_logo?: string | null };
+  score?: { home?: number | null; away?: number | null };
+  venue?: { name?: string | null; attendance?: number | null };
+  xg?: { home?: number | null; away?: number | null };
+  stats?: {
+    possession?: { home?: number; away?: number };
+    shots?: { home_total?: number; away_total?: number; home_on_target?: number; away_on_target?: number };
+    corners?: { home?: number; away?: number };
+    fouls?: { home?: number; away?: number };
+    offsides?: { home?: number; away?: number };
+    cards?: { home_total?: number; away_total?: number };
+  };
+  lineups?: { home?: FdioLineupPlayer[]; away?: FdioLineupPlayer[] };
+};
+type FdioEvent = {
+  minute?: number | null;
+  extra_minute?: number | null;
+  team_side?: "home" | "away";
+  event_type?: string;
+  player?: { player_name?: string | null };
+  assist?: { player_name?: string | null } | null;
+};
+
+function mapLineup(players?: FdioLineupPlayer[]) {
+  return (players ?? []).map((player) => ({
+    name: player.known_name ?? player.player_name ?? "?",
+    number: typeof player.shirt_number === "number" ? player.shirt_number : undefined,
+    position: player.position_name ?? undefined,
+    photo: player.player_image && !player.player_image.includes("default") ? player.player_image : undefined,
+  }));
+}
+
+function statItem(label: string, home?: number, away?: number, suffix?: string) {
+  return { label, home: Number(home) || 0, away: Number(away) || 0, ...(suffix ? { suffix } : {}) };
+}
+
+async function fetchMatchDetail(id: number): Promise<MatchDetail | null> {
+  const key = process.env.FOOTBALLDATA_IO_KEY;
+  if (!key) return null;
+  const headers = { Authorization: `Bearer ${key}` };
+  try {
+    const [detailRes, eventsRes] = await Promise.all([
+      fetch(`${FDIO_BASE}/matches/${id}`, { headers, next: { revalidate: 3600 } }),
+      fetch(`${FDIO_BASE}/matches/${id}/events`, { headers, next: { revalidate: 3600 } }),
+    ]);
+    if (!detailRes.ok) throw new Error(`footballdata.io match HTTP ${detailRes.status}`);
+    const detail = ((await detailRes.json()) as { data?: FdioMatchDetailRaw }).data;
+    if (!detail) return null;
+    const events = eventsRes.ok
+      ? ((await eventsRes.json()) as { data?: { events?: FdioEvent[] } }).data?.events ?? []
+      : [];
+
+    const goals = events
+      .filter((event) => (event.event_type ?? "").includes("goal"))
+      .map((event) => ({
+        minute: Number(event.minute) || 0,
+        extra: event.extra_minute ? Number(event.extra_minute) : undefined,
+        side: event.team_side ?? "home",
+        player: event.player?.player_name ?? "?",
+        assist: event.assist?.player_name ?? undefined,
+      }))
+      .sort((a, b) => a.minute + (a.extra ?? 0) - (b.minute + (b.extra ?? 0)));
+
+    const s = detail.stats ?? {};
+    const stats = [
+      statItem("Posesión", s.possession?.home, s.possession?.away, "%"),
+      statItem("Tiros", s.shots?.home_total, s.shots?.away_total),
+      statItem("Tiros a puerta", s.shots?.home_on_target, s.shots?.away_on_target),
+      statItem("Córners", s.corners?.home, s.corners?.away),
+      statItem("Faltas", s.fouls?.home, s.fouls?.away),
+      statItem("Fueras de juego", s.offsides?.home, s.offsides?.away),
+      statItem("Tarjetas", s.cards?.home_total, s.cards?.away_total),
+    ].filter((item) => item.home > 0 || item.away > 0);
+
+    return {
+      id: detail.match_id ?? id,
+      home: detail.home_team?.team_name ?? "?",
+      away: detail.away_team?.team_name ?? "?",
+      homeLogo: detail.home_team?.team_logo ?? undefined,
+      awayLogo: detail.away_team?.team_logo ?? undefined,
+      homeScore: detail.score?.home ?? undefined,
+      awayScore: detail.score?.away ?? undefined,
+      competition: detail.league?.league_name ?? detail.league?.name ?? undefined,
+      gameWeek: detail.game_week ?? undefined,
+      venue: detail.venue?.name ?? undefined,
+      attendance:
+        typeof detail.venue?.attendance === "number" && detail.venue.attendance > 0
+          ? detail.venue.attendance
+          : undefined,
+      goals,
+      lineups: { home: mapLineup(detail.lineups?.home), away: mapLineup(detail.lineups?.away) },
+      stats,
+      ...(typeof detail.xg?.home === "number" && typeof detail.xg?.away === "number"
+        ? { xg: { home: detail.xg.home, away: detail.xg.away } }
+        : {}),
+    };
+  } catch (error) {
+    console.warn(`[madrid] match detail ${id} unavailable:`, error);
+    return null;
+  }
+}
+
+export async function getMatchDetail(id: number): Promise<MatchDetail | null> {
+  return unstable_cache(() => fetchMatchDetail(id), ["madrid-match-detail", String(id)], {
+    revalidate: 3600,
+  })();
 }
 
 // --- Plantilla (fuente keyless: roster de ESPN) ---

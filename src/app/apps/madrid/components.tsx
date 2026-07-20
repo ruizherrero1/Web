@@ -1,8 +1,18 @@
 "use client";
 
+import { useState } from "react";
 import { COMP_COLORS, formatMadridDate, formatMadridTime, isMadrid, scoreLabel } from "./helpers";
 import { themeConfigs } from "./theme";
-import type { CompId, MadridMatch, Scorer, SquadPlayer, StandingRow, ThemeId } from "./types";
+import type {
+  CompId,
+  LineupPlayer,
+  MadridMatch,
+  MatchDetail,
+  Scorer,
+  SquadPlayer,
+  StandingRow,
+  ThemeId,
+} from "./types";
 
 export function ThemeSelector({
   activeTheme,
@@ -98,10 +108,33 @@ export function LiveBadge({ minute }: { minute?: string }) {
 
 export function MatchRow({ match, domId }: { match: MadridMatch; domId?: string }) {
   const score = scoreLabel(match);
+  const canExpand = Boolean(match.detailId) && match.status !== "upcoming";
+  const [expanded, setExpanded] = useState(false);
+  const [detail, setDetail] = useState<MatchDetail | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  function toggle() {
+    if (!canExpand) return;
+    const next = !expanded;
+    setExpanded(next);
+    if (next && detail === null && !loading && !failed) {
+      setLoading(true);
+      fetch(`/api/madrid/match/${match.detailId}`, { cache: "no-store" })
+        .then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
+        .then((payload) => setDetail(payload.detail as MatchDetail))
+        .catch(() => setFailed(true))
+        .finally(() => setLoading(false));
+    }
+  }
+
   return (
     <article
       id={domId}
-      className="rounded-lg border border-[var(--rm-border)] bg-[var(--rm-card-bg)] p-3 shadow-sm transition hover:border-[var(--rm-accent)]"
+      className={`rounded-lg border border-[var(--rm-border)] bg-[var(--rm-card-bg)] p-3 shadow-sm transition hover:border-[var(--rm-accent)] ${
+        canExpand ? "cursor-pointer select-none" : ""
+      }`}
+      onClick={canExpand ? toggle : undefined}
     >
       <div className="flex items-center justify-between gap-2 text-xs">
         <div className="flex items-center gap-x-2">
@@ -115,6 +148,15 @@ export function MatchRow({ match, domId }: { match: MadridMatch; domId?: string 
           {match.status === "live" ? <LiveBadge minute={match.statusDetail ?? undefined} /> : null}
           {match.status === "finished" ? <ResultDot result={match.result} /> : null}
           <CompBadge comp={match.comp} label={match.compLabel} />
+          {canExpand ? (
+            <span
+              className={`text-[var(--rm-muted)] transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}
+            >
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} className="h-3.5 w-3.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 5.5l5 5 5-5" />
+              </svg>
+            </span>
+          ) : null}
         </div>
       </div>
       <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
@@ -138,7 +180,136 @@ export function MatchRow({ match, domId }: { match: MadridMatch; domId?: string 
       {match.venue ? (
         <p className="mt-1 text-center text-xs text-[var(--rm-muted)]">{match.venue}</p>
       ) : null}
+      {expanded ? (
+        <div onClick={(event) => event.stopPropagation()}>
+          {loading ? (
+            <p className="mt-3 border-t border-[var(--rm-border-inner)] pt-3 text-center text-xs text-[var(--rm-muted)]">
+              Cargando detalle…
+            </p>
+          ) : failed || !detail ? (
+            <p className="mt-3 border-t border-[var(--rm-border-inner)] pt-3 text-center text-xs text-[var(--rm-muted)]">
+              No hay detalle disponible para este partido.
+            </p>
+          ) : (
+            <MatchDetailPanel detail={detail} />
+          )}
+        </div>
+      ) : null}
     </article>
+  );
+}
+
+function StatBar({ item }: { item: MatchDetail["stats"][number] }) {
+  const total = item.home + item.away || 1;
+  const homePct = Math.round((item.home / total) * 100);
+  return (
+    <div>
+      <div className="flex items-center justify-between text-xs font-semibold text-[var(--rm-text)]">
+        <span>
+          {item.home}
+          {item.suffix ?? ""}
+        </span>
+        <span className="text-[var(--rm-muted)]">{item.label}</span>
+        <span>
+          {item.away}
+          {item.suffix ?? ""}
+        </span>
+      </div>
+      <div className="mt-1 flex h-1.5 overflow-hidden rounded-full bg-[var(--rm-panel-bg)]">
+        <span className="bg-[var(--rm-accent)]" style={{ width: `${homePct}%` }} />
+        <span className="bg-[var(--rm-muted)]" style={{ width: `${100 - homePct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function LineupColumn({ players, align }: { players: LineupPlayer[]; align: "left" | "right" }) {
+  return (
+    <ul className={`space-y-1 ${align === "right" ? "text-right" : ""}`}>
+      {players.map((player, index) => (
+        <li key={`${player.name}-${index}`} className="text-xs text-[var(--rm-text)]">
+          <span className="text-[var(--rm-muted)]">{player.number ?? "·"}</span>{" "}
+          <span className="font-medium">{player.name}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function MatchDetailPanel({ detail }: { detail: MatchDetail }) {
+  const homeGoals = detail.goals.filter((goal) => goal.side === "home");
+  const awayGoals = detail.goals.filter((goal) => goal.side === "away");
+  const hasLineups = detail.lineups.home.length > 0 || detail.lineups.away.length > 0;
+
+  return (
+    <div className="mt-3 space-y-4 border-t border-[var(--rm-border-inner)] pt-3">
+      {(detail.competition || detail.gameWeek || detail.attendance) ? (
+        <p className="text-center text-[11px] text-[var(--rm-muted)]">
+          {[
+            detail.competition,
+            detail.gameWeek ? `Jornada ${detail.gameWeek}` : null,
+            detail.attendance ? `${detail.attendance.toLocaleString("es-ES")} espectadores` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+      ) : null}
+
+      {detail.goals.length > 0 ? (
+        <div className="grid grid-cols-[1fr_auto_1fr] gap-x-3 text-[11px]">
+          <div className="space-y-1 text-right">
+            {homeGoals.map((goal, index) => (
+              <div key={index} className="text-[var(--rm-text)]">
+                <span className="text-[var(--rm-muted)]">{goal.assist ? `${goal.assist} ` : ""}</span>
+                {goal.player}
+                <span className="ml-1 font-bold text-[var(--rm-accent)]">
+                  {goal.minute}
+                  {goal.extra ? `+${goal.extra}` : ""}&apos;
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="flex flex-col items-center text-[var(--rm-muted)]">
+            <span aria-hidden>⚽</span>
+          </div>
+          <div className="space-y-1">
+            {awayGoals.map((goal, index) => (
+              <div key={index} className="text-[var(--rm-text)]">
+                <span className="mr-1 font-bold text-[var(--rm-accent)]">
+                  {goal.minute}
+                  {goal.extra ? `+${goal.extra}` : ""}&apos;
+                </span>
+                {goal.player}
+                <span className="text-[var(--rm-muted)]">{goal.assist ? ` ${goal.assist}` : ""}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {detail.xg ? (
+        <StatBar item={{ label: "xG", home: detail.xg.home, away: detail.xg.away }} />
+      ) : null}
+      {detail.stats.length > 0 ? (
+        <div className="space-y-2">
+          {detail.stats.map((item) => (
+            <StatBar key={item.label} item={item} />
+          ))}
+        </div>
+      ) : null}
+
+      {hasLineups ? (
+        <div>
+          <p className="mb-2 text-center text-[10px] font-black uppercase tracking-[0.1em] text-[var(--rm-muted)]">
+            Onces iniciales
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <LineupColumn players={detail.lineups.home} align="left" />
+            <LineupColumn players={detail.lineups.away} align="right" />
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

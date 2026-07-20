@@ -40,6 +40,47 @@ export type MadridMatch = {
   rival: string;
   rivalLogo?: string;
   result?: MadridResult;
+  detailId?: number; // match_id de footballdata.io para el detalle
+};
+
+export type MatchGoal = {
+  minute: number;
+  extra?: number;
+  side: "home" | "away";
+  player: string;
+  assist?: string;
+};
+
+export type LineupPlayer = {
+  name: string;
+  number?: number;
+  position?: string;
+  photo?: string;
+};
+
+export type MatchStatItem = {
+  label: string;
+  home: number;
+  away: number;
+  suffix?: string;
+};
+
+export type MatchDetail = {
+  id: number;
+  home: string;
+  away: string;
+  homeLogo?: string;
+  awayLogo?: string;
+  homeScore?: number;
+  awayScore?: number;
+  competition?: string;
+  gameWeek?: number;
+  venue?: string;
+  attendance?: number;
+  goals: MatchGoal[];
+  lineups: { home: LineupPlayer[]; away: LineupPlayer[] };
+  stats: MatchStatItem[];
+  xg?: { home: number; away: number };
 };
 
 export type StandingRow = {
