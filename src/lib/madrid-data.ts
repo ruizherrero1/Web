@@ -529,7 +529,7 @@ async function fetchFdioMatchIndex(): Promise<Record<string, number>> {
   }
 }
 
-const getFdioMatchIndex = unstable_cache(fetchFdioMatchIndex, ["madrid-fdio-match-index-v1"], {
+const getFdioMatchIndex = unstable_cache(fetchFdioMatchIndex, ["madrid-fdio-match-index-v2"], {
   revalidate: 21600,
 });
 
