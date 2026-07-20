@@ -203,25 +203,138 @@ async function fetchAllLeagues(season: number): Promise<MadridMatch[]> {
   );
 }
 
+// --- Proximos partidos via football-data.org (requiere API key) ---
+// Publica el calendario de LaLiga/Champions normalmente antes que ESPN.
+type FootballDataTeam = {
+  id?: number;
+  name?: string | null;
+  shortName?: string | null;
+  crest?: string | null;
+};
+type FootballDataTeamMatch = {
+  id?: number;
+  utcDate: string;
+  status: string;
+  stage?: string | null;
+  competition?: { code?: string | null; name?: string | null };
+  homeTeam: FootballDataTeam;
+  awayTeam: FootballDataTeam;
+  score?: { fullTime?: { home?: number | null; away?: number | null } };
+};
+
+const FD_COMP: Record<string, { comp: CompId; label: string }> = {
+  PD: { comp: "laliga", label: "LaLiga" },
+  CL: { comp: "champions", label: "Champions" },
+  CDR: { comp: "copa", label: "Copa del Rey" },
+};
+
+function normalizeFootballDataMatch(match: FootballDataTeamMatch): MadridMatch | null {
+  const code = match.competition?.code ?? "";
+  const mapped = FD_COMP[code];
+  if (!mapped) return null; // ignoramos competiciones no relevantes
+  const kickoff = new Date(match.utcDate);
+  if (Number.isNaN(kickoff.getTime())) return null;
+
+  const status =
+    match.status === "IN_PLAY" || match.status === "PAUSED"
+      ? "live"
+      : match.status === "FINISHED"
+        ? "finished"
+        : "upcoming";
+  const isMadridHome = match.homeTeam.id === 86;
+  const home = match.homeTeam.name ?? match.homeTeam.shortName ?? "?";
+  const away = match.awayTeam.name ?? match.awayTeam.shortName ?? "?";
+  const homeScore = status === "upcoming" ? undefined : match.score?.fullTime?.home ?? undefined;
+  const awayScore = status === "upcoming" ? undefined : match.score?.fullTime?.away ?? undefined;
+
+  let result: MadridResult | undefined;
+  const madridScore = isMadridHome ? homeScore : awayScore;
+  const rivalScore = isMadridHome ? awayScore : homeScore;
+  if (status === "finished" && madridScore != null && rivalScore != null) {
+    result = madridScore > rivalScore ? "W" : madridScore < rivalScore ? "L" : "D";
+  }
+
+  return {
+    id: `${mapped.comp}-fd-${match.id ?? match.utcDate}`,
+    comp: mapped.comp,
+    compLabel: mapped.label,
+    round: match.stage && match.stage !== "REGULAR_SEASON" ? match.stage.replaceAll("_", " ") : undefined,
+    startsAt: kickoff.toISOString(),
+    date: kickoff.toISOString().slice(0, 10),
+    home,
+    away,
+    homeLogo: match.homeTeam.crest ?? undefined,
+    awayLogo: match.awayTeam.crest ?? undefined,
+    status,
+    homeScore: homeScore ?? undefined,
+    awayScore: awayScore ?? undefined,
+    isMadridHome,
+    rival: isMadridHome ? away : home,
+    rivalLogo: (isMadridHome ? match.awayTeam.crest : match.homeTeam.crest) ?? undefined,
+    result,
+  };
+}
+
+async function fetchFootballDataUpcoming(): Promise<MadridMatch[]> {
+  const apiKey = process.env.FOOTBALL_DATA_API_KEY;
+  if (!apiKey) return [];
+  try {
+    const response = await fetch(
+      "https://api.football-data.org/v4/teams/86/matches?status=SCHEDULED",
+      { headers: { "X-Auth-Token": apiKey }, next: { revalidate: 300 } },
+    );
+    if (!response.ok) throw new Error(`football-data matches HTTP ${response.status}`);
+    const data = (await response.json()) as { matches?: FootballDataTeamMatch[] };
+    return (data.matches ?? [])
+      .map(normalizeFootballDataMatch)
+      .filter((match): match is MadridMatch => match !== null);
+  } catch (error) {
+    console.warn("[madrid] football-data upcoming unavailable:", error);
+    return [];
+  }
+}
+
+// Fusiona dos listas de partidos evitando duplicados. Clave: competicion + dia
+// (el Madrid no juega dos veces la misma competicion el mismo dia). Se prioriza
+// la primera lista (normalmente ESPN, con logos y estado mas rico).
+function mergeCalendar(primary: MadridMatch[], secondary: MadridMatch[]): MadridMatch[] {
+  const byKey = new Map<string, MadridMatch>();
+  const keyOf = (m: MadridMatch) => `${m.comp}|${m.date}`;
+  for (const match of primary) byKey.set(keyOf(match), match);
+  for (const match of secondary) {
+    const key = keyOf(match);
+    if (!byKey.has(key)) byKey.set(key, match);
+  }
+  return Array.from(byKey.values()).sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+}
+
 async function buildMadridData(): Promise<MadridData> {
   const season = currentSeason();
-  let matches = await fetchAllLeagues(season);
+
+  // Fuente principal: ESPN de la campana actual. Complemento: proximos partidos
+  // de football-data.org (suele publicar el calendario de LaLiga/Champions antes
+  // que ESPN), asi los partidos futuros aparecen en cuanto la fuente los tiene.
+  const [espnCurrent, fdUpcoming] = await Promise.all([
+    fetchAllLeagues(season),
+    fetchFootballDataUpcoming(),
+  ]);
+
+  let matches = mergeCalendar(espnCurrent, fdUpcoming);
   let usedSeason = season;
 
-  // En pretemporada la campana nueva aun no tiene partidos publicados: caemos a
-  // la anterior para no mostrar una app vacia.
-  if (matches.length < 5) {
+  // Si la campana nueva aun no tiene NADA publicado, mostramos solo los ultimos
+  // resultados de la anterior como contexto (no toda la temporada antigua).
+  if (matches.length === 0) {
     const previous = await fetchAllLeagues(season - 1);
-    if (previous.length > matches.length) {
-      matches = previous;
-      usedSeason = season - 1;
-    }
+    const recent = previous.filter((m) => m.status === "finished").slice(-8);
+    matches = mergeCalendar(recent, fdUpcoming);
+    usedSeason = recent.length > 0 ? season - 1 : season;
   }
 
   return {
     matches,
     season: usedSeason,
-    source: "espn",
+    source: fdUpcoming.length > 0 ? "espn+football-data" : "espn",
     generatedAt: new Date().toISOString(),
   };
 }
@@ -306,9 +419,11 @@ type EspnAthlete = {
   fullName?: string | null;
   jersey?: string | null;
   age?: number | null;
+  height?: number | null; // pulgadas
+  weight?: number | null; // libras
   position?: { name?: string | null; abbreviation?: string | null };
   citizenship?: string | null;
-  flag?: { alt?: string | null };
+  flag?: { href?: string | null; alt?: string | null };
 };
 
 const POSITION_GROUPS: Record<string, string> = {
@@ -318,9 +433,27 @@ const POSITION_GROUPS: Record<string, string> = {
   F: "Delanteros",
 };
 
+const POSITION_NAMES: Record<string, string> = {
+  Goalkeeper: "Portero",
+  Defender: "Defensa",
+  Midfielder: "Centrocampista",
+  Forward: "Delantero",
+};
+
 function positionGroup(abbr?: string | null): string {
   if (!abbr) return "Otros";
   return POSITION_GROUPS[abbr[0]?.toUpperCase()] ?? "Otros";
+}
+
+function heightLabel(inches?: number | null): string | undefined {
+  if (typeof inches !== "number" || inches <= 0) return undefined;
+  const meters = (inches * 0.0254).toFixed(2).replace(".", ",");
+  return `${meters} m`;
+}
+
+function weightLabel(pounds?: number | null): string | undefined {
+  if (typeof pounds !== "number" || pounds <= 0) return undefined;
+  return `${Math.round(pounds * 0.453592)} kg`;
 }
 
 async function buildSquad(): Promise<SquadPlayer[]> {
@@ -341,9 +474,16 @@ async function buildSquad(): Promise<SquadPlayer[]> {
         .map((athlete) => ({
           name: athlete.displayName as string,
           position: positionGroup(athlete.position?.abbreviation),
+          positionName:
+            POSITION_NAMES[athlete.position?.name ?? ""] ??
+            positionGroup(athlete.position?.abbreviation).replace(/e?s$/, ""),
           positionAbbr: athlete.position?.abbreviation ?? "",
           number: athlete.jersey ? Number(athlete.jersey) || undefined : undefined,
           age: typeof athlete.age === "number" ? athlete.age : undefined,
+          height: heightLabel(athlete.height),
+          weight: weightLabel(athlete.weight),
+          country: athlete.citizenship ?? athlete.flag?.alt ?? undefined,
+          countryFlag: athlete.flag?.href ?? undefined,
         }));
     } catch (error) {
       console.warn("[madrid] squad unavailable:", error);

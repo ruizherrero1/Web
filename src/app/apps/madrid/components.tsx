@@ -201,6 +201,65 @@ export function StandingsTable({ rows }: { rows: StandingRow[] }) {
 
 const POSITION_ORDER = ["Porteros", "Defensas", "Centrocampistas", "Delanteros", "Otros"];
 
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  const first = parts[0]?.[0] ?? "";
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
+  return (first + last).toUpperCase();
+}
+
+function PlayerCard({ player }: { player: SquadPlayer }) {
+  const details = [
+    player.age ? `${player.age} años` : null,
+    player.height,
+    player.weight,
+  ].filter(Boolean);
+  return (
+    <li className="flex items-center gap-3 px-4 py-3">
+      <div className="relative shrink-0">
+        {player.photo ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={player.photo}
+            alt={player.name}
+            width={44}
+            height={44}
+            className="h-11 w-11 rounded-full object-cover"
+          />
+        ) : (
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--rm-panel-bg)] text-sm font-black text-[var(--rm-accent)]">
+            {initials(player.name)}
+          </span>
+        )}
+        {player.number ? (
+          <span className="absolute -bottom-1 -right-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-[var(--rm-card-bg)] bg-[var(--rm-accent)] px-1 text-[10px] font-black text-[var(--rm-accent-fg)]">
+            {player.number}
+          </span>
+        ) : null}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="flex items-center gap-1.5 truncate font-semibold text-[var(--rm-text)]">
+          {player.countryFlag ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={player.countryFlag}
+              alt={player.country ?? ""}
+              width={18}
+              height={13}
+              className="h-3 w-4 shrink-0 rounded-[1px] object-cover"
+            />
+          ) : null}
+          <span className="truncate">{player.name}</span>
+        </p>
+        <p className="mt-0.5 truncate text-xs text-[var(--rm-muted)]">
+          {player.positionName}
+          {details.length > 0 ? ` · ${details.join(" · ")}` : ""}
+        </p>
+      </div>
+    </li>
+  );
+}
+
 export function SquadList({ players }: { players: SquadPlayer[] }) {
   const groups = POSITION_ORDER.map((group) => ({
     group,
@@ -216,25 +275,15 @@ export function SquadList({ players }: { players: SquadPlayer[] }) {
           key={entry.group}
           className="overflow-hidden rounded-lg border border-[var(--rm-border)] bg-[var(--rm-card-bg)] shadow-sm"
         >
-          <div className="border-b border-[var(--rm-border)] bg-[var(--rm-card-header)] px-4 py-3 text-white">
+          <div className="flex items-center justify-between border-b border-[var(--rm-border)] bg-[var(--rm-card-header)] px-4 py-3 text-white">
             <h3 className="text-base font-bold">{entry.group}</h3>
+            <span className="text-xs font-semibold text-white/60">
+              {entry.players.length}
+            </span>
           </div>
           <ul className="divide-y divide-[var(--rm-border-inner)]">
             {entry.players.map((player) => (
-              <li
-                key={`${player.name}-${player.number ?? ""}`}
-                className="flex items-center gap-3 px-4 py-2.5 text-sm"
-              >
-                <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--rm-panel-bg)] text-xs font-black text-[var(--rm-accent)]">
-                  {player.number ?? "—"}
-                </span>
-                <span className="min-w-0 flex-1 truncate font-semibold text-[var(--rm-text)]">
-                  {player.name}
-                </span>
-                {player.age ? (
-                  <span className="shrink-0 text-xs text-[var(--rm-muted)]">{player.age} a.</span>
-                ) : null}
-              </li>
+              <PlayerCard key={`${player.name}-${player.number ?? ""}`} player={player} />
             ))}
           </ul>
         </article>

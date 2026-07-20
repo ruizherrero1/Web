@@ -53,13 +53,9 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
   const [refreshTick, setRefreshTick] = useState(0);
   const [query, setQuery] = useState("");
   const [compFilter, setCompFilter] = useState<string>("todas");
-  // Por defecto mostramos los proximos partidos; si no hay ninguno (pretemporada
-  // / temporada terminada), arrancamos en Resultados para no ver la lista vacia.
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>(() =>
-    (initialData?.matches ?? []).some((match) => match.status !== "finished")
-      ? "proximos"
-      : "resultados",
-  );
+  // Lideramos siempre con los proximos partidos; si aun no hay calendario
+  // publicado, el estado vacio lo explica y quedan los Resultados a un clic.
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>("proximos");
   const [showScrollTop, setShowScrollTop] = useState(false);
   const hasAutoScrolled = useRef(false);
 
@@ -253,13 +249,19 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
           </div>
           <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr] lg:items-end lg:gap-8">
             <div>
-              <p className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.2em] text-[var(--rm-hero-label)]">
-                <span>👑</span>
-                <span>Hala Madrid</span>
-              </p>
-              <h1 className="mt-2 text-4xl font-black leading-[1.05] sm:mt-4 sm:text-5xl lg:text-6xl">
-                REAL MADRID
-              </h1>
+              <div className="flex items-center gap-3 sm:gap-4">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/madrid-crest.png"
+                  alt="Escudo del Real Madrid"
+                  width={72}
+                  height={93}
+                  className="h-16 w-auto drop-shadow-lg sm:h-20 lg:h-24"
+                />
+                <h1 className="text-4xl font-black leading-[1.05] sm:text-5xl lg:text-6xl">
+                  REAL MADRID
+                </h1>
+              </div>
               <p className="mt-2 hidden max-w-2xl text-base leading-7 text-[var(--rm-hero-soft)] sm:mt-4 sm:block">
                 Calendario, resultados, clasificación y plantilla — todas las competiciones, con
                 horarios en España.
@@ -420,6 +422,23 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
                 filteredMatches.map((match: MadridMatch) => (
                   <MatchRow key={match.id} match={match} domId={`rm-${match.id}`} />
                 ))
+              ) : timeFilter === "proximos" ? (
+                <div className="rounded-lg border border-[var(--rm-border)] bg-[var(--rm-card-bg)] p-5 text-sm text-[var(--rm-muted)]">
+                  <p className="font-semibold text-[var(--rm-text)]">
+                    Aún no hay próximos partidos publicados.
+                  </p>
+                  <p className="mt-1">
+                    El calendario de la temporada 26/27 aparecerá aquí en cuanto la fuente lo
+                    publique.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setTimeFilter("resultados")}
+                    className="mt-3 inline-flex min-h-9 items-center rounded-md bg-[var(--rm-accent)] px-3 text-sm font-bold text-[var(--rm-accent-fg)]"
+                  >
+                    Ver últimos resultados
+                  </button>
+                </div>
               ) : (
                 <p className="rounded-lg border border-[var(--rm-border)] bg-[var(--rm-card-bg)] p-4 text-sm text-[var(--rm-muted)]">
                   No hay partidos que coincidan con el filtro.

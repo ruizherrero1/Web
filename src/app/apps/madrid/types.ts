@@ -59,11 +59,16 @@ export type StandingRow = {
 
 export type SquadPlayer = {
   name: string;
-  position: string; // grupo: Portero / Defensa / Centrocampista / Delantero
+  position: string; // grupo: Porteros / Defensas / Centrocampistas / Delanteros
+  positionName: string; // posicion concreta (ej. Portero, Defensa)
   positionAbbr: string;
   number?: number;
-  countryCode?: string;
   age?: number;
+  height?: string; // ej. "1,85 m"
+  weight?: string; // ej. "78 kg"
+  country?: string;
+  countryFlag?: string; // URL de la bandera
+  photo?: string; // foto del jugador (vacio hasta integrar API con fotos)
 };
 
 export type Scorer = {
