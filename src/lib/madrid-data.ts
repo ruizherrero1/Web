@@ -1,5 +1,6 @@
 import { unstable_cache } from "next/cache";
 import type {
+  ChampionsStandings,
   CompId,
   MadridData,
   MadridMatch,
@@ -368,14 +369,15 @@ function stat(entry: EspnStanding, name: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-async function buildStandings(): Promise<StandingRow[]> {
+// Clasificacion de una competicion via ESPN (keyless). Devuelve tambien la
+// temporada usada, para saber si es la actual o la anterior (pretemporada).
+async function buildEspnStandings(slug: string): Promise<{ rows: StandingRow[]; season: number }> {
   const season = currentSeason();
   for (const target of [season, season - 1]) {
     try {
-      const response = await fetch(
-        `${ESPN_WEB}/esp.1/standings?season=${target}`,
-        { next: { revalidate: 300 } },
-      );
+      const response = await fetch(`${ESPN_WEB}/${slug}/standings?season=${target}`, {
+        next: { revalidate: 300 },
+      });
       if (!response.ok) continue;
       const data = (await response.json()) as {
         children?: Array<{ standings?: { entries?: EspnStanding[] } }>;
@@ -410,17 +412,36 @@ async function buildStandings(): Promise<StandingRow[]> {
           b.goalDifference - a.goalDifference ||
           b.goalsFor - a.goalsFor,
       );
-      return rows.map((row, index) => ({ ...row, rank: index + 1 }));
+      return { rows: rows.map((row, index) => ({ ...row, rank: index + 1 })), season: target };
     } catch (error) {
-      console.warn("[madrid] standings unavailable:", error);
+      console.warn(`[madrid] standings ${slug} unavailable:`, error);
     }
   }
-  return [];
+  return { rows: [], season };
 }
 
-export const getLaligaStandings = unstable_cache(buildStandings, ["madrid-standings-v1"], {
-  revalidate: 300,
-});
+export const getLaligaStandings = unstable_cache(
+  async () => (await buildEspnStandings("esp.1")).rows,
+  ["madrid-standings-v2"],
+  { revalidate: 300 },
+);
+
+// Clasificacion de la Champions (fase liga de 36). En pretemporada la 26/27 aun
+// no esta sorteada, asi que buildEspnStandings cae a la 25/26 (con el Madrid).
+async function buildChampionsStandings(): Promise<ChampionsStandings> {
+  const { rows, season } = await buildEspnStandings("uefa.champions");
+  return {
+    rows,
+    isPrevious: season < currentSeason(),
+    seasonYear: rows.length > 0 ? season * 10000 + (season + 1) : undefined,
+  };
+}
+
+export const getChampionsStandings = unstable_cache(
+  buildChampionsStandings,
+  ["madrid-champions-standings-v2"],
+  { revalidate: 21600 },
+);
 
 // --- footballdata.io: fotos + goles/asistencias por jugador ---
 // Plan free: 1000 req/mes, asi que se cachea 12 h y se comparte entre plantilla
@@ -436,7 +457,12 @@ type FdioPlayer = {
   first_name?: string;
   last_name?: string;
   player_image?: string;
-  stats?: { goals?: number | null; assists?: number | null; minutes?: number | null };
+  stats?: {
+    goals?: number | null;
+    assists?: number | null;
+    minutes?: number | null;
+    appearances?: number | null;
+  };
 };
 
 export type FdioAgg = {
@@ -445,6 +471,7 @@ export type FdioAgg = {
   goals: number;
   assists: number;
   minutes: number;
+  appearances: number;
 };
 
 function normName(value: string): string {
@@ -482,10 +509,11 @@ async function getFdioByName(): Promise<Map<string, FdioAgg>> {
     if (id == null) continue;
     const entry =
       byId.get(id) ??
-      ({ name: player.known_name ?? player.player_name ?? "", goals: 0, assists: 0, minutes: 0, keys: new Set<string>() } as FdioAgg & { keys: Set<string> });
+      ({ name: player.known_name ?? player.player_name ?? "", goals: 0, assists: 0, minutes: 0, appearances: 0, keys: new Set<string>() } as FdioAgg & { keys: Set<string> });
     entry.goals += Number(player.stats?.goals) || 0;
     entry.assists += Number(player.stats?.assists) || 0;
     entry.minutes += Number(player.stats?.minutes) || 0;
+    entry.appearances += Number(player.stats?.appearances) || 0;
     const image = player.player_image ?? "";
     if (image && !image.includes("default") && !entry.photo) entry.photo = image;
     for (const candidate of [player.known_name, player.player_name, `${player.first_name ?? ""} ${player.last_name ?? ""}`]) {
@@ -495,7 +523,14 @@ async function getFdioByName(): Promise<Map<string, FdioAgg>> {
   }
   const byName = new Map<string, FdioAgg>();
   for (const entry of byId.values()) {
-    const agg: FdioAgg = { name: entry.name, photo: entry.photo, goals: entry.goals, assists: entry.assists, minutes: entry.minutes };
+    const agg: FdioAgg = {
+      name: entry.name,
+      photo: entry.photo,
+      goals: entry.goals,
+      assists: entry.assists,
+      minutes: entry.minutes,
+      appearances: entry.appearances,
+    };
     for (const key of entry.keys) byName.set(key, agg);
   }
   return byName;
@@ -734,6 +769,8 @@ async function buildSquad(): Promise<SquadPlayer[]> {
             photo: extra?.photo,
             goals: extra?.goals ? extra.goals : undefined,
             assists: extra?.assists ? extra.assists : undefined,
+            minutes: extra?.minutes ? extra.minutes : undefined,
+            appearances: extra?.appearances ? extra.appearances : undefined,
           };
         });
     } catch (error) {
