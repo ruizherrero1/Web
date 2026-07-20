@@ -23,6 +23,20 @@ export function isMadrid(name: string): boolean {
   return /real madrid/i.test(name);
 }
 
+// Dónde ver en España por competición (temporada 2026). Los derechos cambian,
+// así que es un mapeo aproximado y editable.
+export const BROADCAST: Record<CompId, string> = {
+  laliga: "Movistar Plus+",
+  champions: "Movistar Liga de Campeones",
+  copa: "Movistar Plus+ / RTVE",
+  supercopa: "Movistar Plus+",
+  mundialito: "DAZN",
+};
+
+export function broadcastFor(comp: CompId): string {
+  return BROADCAST[comp];
+}
+
 export function normalizeText(text: string): string {
   return text
     .normalize("NFD")

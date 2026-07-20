@@ -1,7 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { COMP_COLORS, formatMadridDate, formatMadridTime, isMadrid, scoreLabel } from "./helpers";
+import {
+  COMP_COLORS,
+  broadcastFor,
+  formatMadridDate,
+  formatMadridTime,
+  isMadrid,
+  scoreLabel,
+} from "./helpers";
 import { themeConfigs } from "./theme";
 import type {
   CompId,
@@ -180,6 +187,10 @@ export function MatchRow({ match, domId }: { match: MadridMatch; domId?: string 
       {match.venue ? (
         <p className="mt-1 text-center text-xs text-[var(--rm-muted)]">{match.venue}</p>
       ) : null}
+      <p className="mt-1 flex items-center justify-center gap-1 text-[11px] text-[var(--rm-muted)]">
+        <span aria-hidden>📺</span>
+        {broadcastFor(match.comp)}
+      </p>
       {expanded ? (
         <div onClick={(event) => event.stopPropagation()}>
           {loading ? (
@@ -313,11 +324,20 @@ export function MatchDetailPanel({ detail }: { detail: MatchDetail }) {
   );
 }
 
-export function StandingsTable({ rows }: { rows: StandingRow[] }) {
+export function StandingsTable({
+  rows,
+  title = "Clasificación · LaLiga",
+  note,
+}: {
+  rows: StandingRow[];
+  title?: string;
+  note?: string;
+}) {
   return (
     <article className="overflow-hidden rounded-lg border border-[var(--rm-border)] bg-[var(--rm-card-bg)] shadow-sm">
       <div className="flex items-center justify-between border-b border-[var(--rm-border)] bg-[var(--rm-card-header)] px-4 py-3 text-white">
-        <h2 className="text-lg font-bold">Clasificación · LaLiga</h2>
+        <h2 className="text-lg font-bold">{title}</h2>
+        {note ? <span className="text-xs font-semibold text-white/60">{note}</span> : null}
       </div>
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-xs sm:text-sm">
@@ -379,14 +399,17 @@ function initials(name: string): string {
   return (first + last).toUpperCase();
 }
 
-function PlayerCard({ player }: { player: SquadPlayer }) {
+function PlayerCard({ player, onSelect }: { player: SquadPlayer; onSelect: (player: SquadPlayer) => void }) {
   const details = [
     player.age ? `${player.age} años` : null,
     player.height,
     player.weight,
   ].filter(Boolean);
   return (
-    <li className="flex items-center gap-3 px-4 py-3">
+    <li
+      className="flex cursor-pointer items-center gap-3 px-4 py-3 transition hover:bg-[var(--rm-row-hl)]"
+      onClick={() => onSelect(player)}
+    >
       <div className="relative shrink-0">
         {player.photo ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -447,7 +470,105 @@ function PlayerCard({ player }: { player: SquadPlayer }) {
   );
 }
 
+function PlayerStat({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="rounded-lg bg-[var(--rm-panel-bg)] px-2 py-2 text-center">
+      <p className="text-lg font-black text-[var(--rm-accent)]">{value}</p>
+      <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--rm-muted)]">
+        {label}
+      </p>
+    </div>
+  );
+}
+
+function PlayerModal({ player, onClose }: { player: SquadPlayer; onClose: () => void }) {
+  const stats: { label: string; value: number }[] = [];
+  if (player.appearances) stats.push({ label: "Partidos", value: player.appearances });
+  if (player.minutes) stats.push({ label: "Minutos", value: player.minutes });
+  if (player.goals) stats.push({ label: "Goles", value: player.goals });
+  if (player.assists) stats.push({ label: "Asist.", value: player.assists });
+
+  const bio = [
+    player.age ? `${player.age} años` : null,
+    player.country,
+    player.height,
+    player.weight,
+  ].filter(Boolean);
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md overflow-hidden rounded-t-2xl border border-[var(--rm-border)] bg-[var(--rm-card-bg)] shadow-2xl sm:rounded-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="relative flex items-center gap-4 bg-[var(--rm-card-header)] p-5 text-white">
+          {player.photo ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={player.photo}
+              alt={player.name}
+              width={80}
+              height={80}
+              className="h-20 w-20 rounded-full border-2 border-white/30 object-cover"
+            />
+          ) : (
+            <span className="flex h-20 w-20 items-center justify-center rounded-full bg-white/10 text-2xl font-black text-[var(--rm-accent)]">
+              {initials(player.name)}
+            </span>
+          )}
+          <div className="min-w-0">
+            <p className="flex items-center gap-2 text-lg font-black leading-tight">
+              {player.countryFlag ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={player.countryFlag} alt={player.country ?? ""} width={22} height={16} className="h-4 w-5 rounded-[1px] object-cover" />
+              ) : null}
+              <span className="truncate">{player.name}</span>
+            </p>
+            <p className="mt-1 text-sm text-white/70">
+              {player.number ? `#${player.number} · ` : ""}
+              {player.positionName}
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-label="Cerrar"
+            onClick={onClose}
+            className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/20"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="p-5">
+          {bio.length > 0 ? (
+            <p className="mb-4 text-sm text-[var(--rm-muted)]">{bio.join(" · ")}</p>
+          ) : null}
+          {stats.length > 0 ? (
+            <>
+              <p className="mb-2 text-[10px] font-black uppercase tracking-[0.1em] text-[var(--rm-muted)]">
+                Esta temporada
+              </p>
+              <div className="grid grid-cols-4 gap-2">
+                {stats.map((stat) => (
+                  <PlayerStat key={stat.label} label={stat.label} value={stat.value} />
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-[var(--rm-muted)]">
+              Sin estadísticas de temporada disponibles todavía.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function SquadList({ players }: { players: SquadPlayer[] }) {
+  const [selected, setSelected] = useState<SquadPlayer | null>(null);
   const groups = POSITION_ORDER.map((group) => ({
     group,
     players: players
@@ -456,26 +577,31 @@ export function SquadList({ players }: { players: SquadPlayer[] }) {
   })).filter((entry) => entry.players.length > 0);
 
   return (
-    <div className="grid gap-5 md:grid-cols-2">
-      {groups.map((entry) => (
-        <article
-          key={entry.group}
-          className="overflow-hidden rounded-lg border border-[var(--rm-border)] bg-[var(--rm-card-bg)] shadow-sm"
-        >
-          <div className="flex items-center justify-between border-b border-[var(--rm-border)] bg-[var(--rm-card-header)] px-4 py-3 text-white">
-            <h3 className="text-base font-bold">{entry.group}</h3>
-            <span className="text-xs font-semibold text-white/60">
-              {entry.players.length}
-            </span>
-          </div>
-          <ul className="divide-y divide-[var(--rm-border-inner)]">
-            {entry.players.map((player) => (
-              <PlayerCard key={`${player.name}-${player.number ?? ""}`} player={player} />
-            ))}
-          </ul>
-        </article>
-      ))}
-    </div>
+    <>
+      <div className="grid gap-5 md:grid-cols-2">
+        {groups.map((entry) => (
+          <article
+            key={entry.group}
+            className="overflow-hidden rounded-lg border border-[var(--rm-border)] bg-[var(--rm-card-bg)] shadow-sm"
+          >
+            <div className="flex items-center justify-between border-b border-[var(--rm-border)] bg-[var(--rm-card-header)] px-4 py-3 text-white">
+              <h3 className="text-base font-bold">{entry.group}</h3>
+              <span className="text-xs font-semibold text-white/60">{entry.players.length}</span>
+            </div>
+            <ul className="divide-y divide-[var(--rm-border-inner)]">
+              {entry.players.map((player) => (
+                <PlayerCard
+                  key={`${player.name}-${player.number ?? ""}`}
+                  player={player}
+                  onSelect={setSelected}
+                />
+              ))}
+            </ul>
+          </article>
+        ))}
+      </div>
+      {selected ? <PlayerModal player={selected} onClose={() => setSelected(null)} /> : null}
+    </>
   );
 }
 

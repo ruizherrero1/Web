@@ -19,6 +19,7 @@ import {
 } from "./helpers";
 import { THEME_STORAGE_KEY, themes } from "./theme";
 import type {
+  ChampionsStandings,
   MadridData,
   MadridMatch,
   Scorer,
@@ -60,6 +61,8 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
   const hasAutoScrolled = useRef(false);
 
   const [standings, setStandings] = useState<StandingRow[] | null>(null);
+  const [standingsView, setStandingsView] = useState<"laliga" | "champions">("laliga");
+  const [champions, setChampions] = useState<ChampionsStandings | null>(null);
   const [squad, setSquad] = useState<SquadPlayer[] | null>(null);
   const [scorers, setScorers] = useState<Scorer[] | null>(null);
 
@@ -157,13 +160,19 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
         .then((p) => setSquad(Array.isArray(p.squad) ? p.squad : []))
         .catch(() => setSquad([]));
     }
+    if (activeTab === "clasificacion" && standingsView === "champions" && champions === null) {
+      fetch("/api/madrid/champions", { cache: "no-store" })
+        .then((r) => r.json())
+        .then((p) => setChampions({ rows: Array.isArray(p.rows) ? p.rows : [], isPrevious: !!p.isPrevious, seasonYear: p.seasonYear }))
+        .catch(() => setChampions({ rows: [], isPrevious: false }));
+    }
     if (activeTab === "goleadores" && scorers === null) {
       fetch("/api/madrid/scorers", { cache: "no-store" })
         .then((r) => r.json())
         .then((p) => setScorers(Array.isArray(p.scorers) ? p.scorers : []))
         .catch(() => setScorers([]));
     }
-  }, [activeTab, standings, squad, scorers]);
+  }, [activeTab, standings, squad, scorers, standingsView, champions]);
 
   function handleRefresh() {
     setRefreshTick((t) => t + 1);
@@ -450,13 +459,49 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
 
         {activeTab === "clasificacion" ? (
           <section className="mt-6">
-            {standings === null ? (
-              <p className="text-sm text-[var(--rm-muted)]">Cargando clasificación…</p>
-            ) : standings.length > 0 ? (
-              <StandingsTable rows={standings} />
+            <div className="mb-4 grid grid-cols-2 rounded-lg border border-[var(--rm-border)] bg-[var(--rm-card-bg)] p-1 shadow-sm">
+              {(
+                [
+                  ["laliga", "LaLiga"],
+                  ["champions", "Champions"],
+                ] as ["laliga" | "champions", string][]
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setStandingsView(key)}
+                  className={`focus-ring min-h-10 rounded-md px-3 text-sm font-bold transition ${
+                    standingsView === key
+                      ? "bg-[var(--rm-accent)] text-[var(--rm-accent-fg)] shadow-sm"
+                      : "text-[var(--rm-muted)] hover:text-[var(--rm-text)]"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {standingsView === "laliga" ? (
+              standings === null ? (
+                <p className="text-sm text-[var(--rm-muted)]">Cargando clasificación…</p>
+              ) : standings.length > 0 ? (
+                <StandingsTable rows={standings} />
+              ) : (
+                <p className="rounded-lg border border-[var(--rm-border)] bg-[var(--rm-card-bg)] p-4 text-sm text-[var(--rm-muted)]">
+                  La clasificación de LaLiga aún no está disponible.
+                </p>
+              )
+            ) : champions === null ? (
+              <p className="text-sm text-[var(--rm-muted)]">Cargando Champions…</p>
+            ) : champions.rows.length > 0 ? (
+              <StandingsTable
+                rows={champions.rows}
+                title="Champions League"
+                note={champions.isPrevious ? "temporada anterior" : undefined}
+              />
             ) : (
               <p className="rounded-lg border border-[var(--rm-border)] bg-[var(--rm-card-bg)] p-4 text-sm text-[var(--rm-muted)]">
-                La clasificación de LaLiga aún no está disponible.
+                La fase de liga de la Champions 26/27 se sorteará en agosto.
               </p>
             )}
           </section>

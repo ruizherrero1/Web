@@ -112,6 +112,14 @@ export type SquadPlayer = {
   photo?: string; // foto del jugador (footballdata.io; vacio si no hay)
   goals?: number; // goles en la temporada (footballdata.io)
   assists?: number; // asistencias en la temporada (footballdata.io)
+  minutes?: number; // minutos jugados (footballdata.io)
+  appearances?: number; // partidos (footballdata.io)
+};
+
+export type ChampionsStandings = {
+  rows: StandingRow[];
+  seasonYear?: number; // ej. 20252026
+  isPrevious: boolean; // true si mostramos la temporada anterior
 };
 
 export type Scorer = {
