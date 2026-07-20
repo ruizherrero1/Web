@@ -15,7 +15,10 @@ export function GET() {
     background_color: "#0a0f1c",
     theme_color: "#0a0f1c",
     orientation: "portrait",
-    icons: [{ src: "/apps/madrid/apple-icon", sizes: "192x192", type: "image/png" }],
+    icons: [
+      { src: "/madrid-icon-180.png", sizes: "180x180", type: "image/png" },
+      { src: "/madrid-icon.png", sizes: "512x512", type: "image/png", purpose: "any" },
+    ],
   };
   return new Response(JSON.stringify(manifest), {
     headers: { "content-type": "application/manifest+json" },
