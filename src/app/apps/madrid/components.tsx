@@ -256,6 +256,22 @@ function PlayerCard({ player }: { player: SquadPlayer }) {
           {details.length > 0 ? ` · ${details.join(" · ")}` : ""}
         </p>
       </div>
+      {player.goals || player.assists ? (
+        <div className="flex shrink-0 items-center gap-2 text-xs">
+          {player.goals ? (
+            <span className="inline-flex items-center gap-1 font-bold text-[var(--rm-text)]" title="Goles">
+              <span aria-hidden>⚽</span>
+              {player.goals}
+            </span>
+          ) : null}
+          {player.assists ? (
+            <span className="inline-flex items-center gap-1 text-[var(--rm-muted)]" title="Asistencias">
+              <span aria-hidden>🅰️</span>
+              {player.assists}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
     </li>
   );
 }
@@ -299,7 +315,7 @@ export function ScorersTable({ scorers }: { scorers: Scorer[] }) {
     <article className="overflow-hidden rounded-lg border border-[var(--rm-border)] bg-[var(--rm-card-bg)] shadow-sm">
       <div className="flex items-center justify-between border-b border-[var(--rm-border)] bg-[var(--rm-card-header)] px-4 py-3 text-white">
         <h2 className="text-lg font-bold">Goleadores del Madrid</h2>
-        <span className="text-xs font-semibold text-white/70">en LaLiga</span>
+        <span className="text-xs font-semibold text-white/70">esta temporada</span>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-xs sm:text-sm">
