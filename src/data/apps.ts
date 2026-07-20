@@ -86,6 +86,16 @@ export const apps = [
     href: "/apps/mundial",
     focus: "Fútbol",
   },
+  {
+    name: "Real Madrid",
+    slug: "madrid",
+    description:
+      "Seguimiento del Real Madrid: calendario, resultados, clasificación de LaLiga, plantilla y goleadores en todas las competiciones.",
+    status: "Activo",
+    access: "Público",
+    href: "/apps/madrid",
+    focus: "Fútbol",
+  },
 ] as const satisfies readonly AppItem[];
 
 

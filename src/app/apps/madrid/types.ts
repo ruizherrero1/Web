@@ -1,0 +1,81 @@
+// Modelo de datos del apartado Real Madrid. A diferencia del Mundial (un torneo
+// con grupos y eliminatoria), aqui seguimos a UN club a lo largo de la temporada
+// en VARIAS competiciones a la vez (LaLiga, Champions, Copa, Supercopa, Mundial
+// de Clubes), asi que la unidad basica es el partido con su competicion.
+
+export type ThemeId = "noche" | "blanco" | "oro";
+export type TabId = "partidos" | "clasificacion" | "plantilla" | "goleadores";
+
+export type CompId =
+  | "laliga"
+  | "champions"
+  | "copa"
+  | "supercopa"
+  | "mundialito";
+
+export type MatchStatus = "finished" | "live" | "upcoming";
+
+// Resultado desde el punto de vista del Madrid (solo en partidos terminados).
+export type MadridResult = "W" | "D" | "L";
+
+export type MadridMatch = {
+  id: string;
+  comp: CompId;
+  compLabel: string;
+  round?: string;
+  startsAt: string; // ISO UTC
+  date: string; // yyyy-mm-dd (UTC)
+  home: string;
+  away: string;
+  homeLogo?: string;
+  awayLogo?: string;
+  venue?: string;
+  status: MatchStatus;
+  statusDetail?: string; // "FT", "45'", "HT", etc.
+  homeScore?: number;
+  awayScore?: number;
+  homePens?: number;
+  awayPens?: number;
+  isMadridHome: boolean;
+  rival: string;
+  rivalLogo?: string;
+  result?: MadridResult;
+};
+
+export type StandingRow = {
+  rank: number;
+  team: string;
+  logo?: string;
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  goalDifference: number;
+  points: number;
+  isMadrid: boolean;
+};
+
+export type SquadPlayer = {
+  name: string;
+  position: string; // grupo: Portero / Defensa / Centrocampista / Delantero
+  positionAbbr: string;
+  number?: number;
+  countryCode?: string;
+  age?: number;
+};
+
+export type Scorer = {
+  name: string;
+  goals: number;
+  assists: number;
+  penalties: number;
+};
+
+export type MadridData = {
+  matches: MadridMatch[];
+  season: number;
+  source: string;
+  generatedAt: string;
+};
