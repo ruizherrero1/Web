@@ -413,6 +413,85 @@ export const getLaligaStandings = unstable_cache(buildStandings, ["madrid-standi
   revalidate: 300,
 });
 
+// --- footballdata.io: fotos + goles/asistencias por jugador ---
+// Plan free: 1000 req/mes, asi que se cachea 12 h y se comparte entre plantilla
+// y goleadores. Cobertura parcial (solo jugadores con minutos en las ligas del
+// plan), por eso se usa como CAPA sobre el roster completo de ESPN.
+const FDIO_BASE = "https://footballdata.io/api/v1";
+const FDIO_TEAM_ID = 78;
+
+type FdioPlayer = {
+  player_id?: number;
+  player_name?: string;
+  known_name?: string;
+  first_name?: string;
+  last_name?: string;
+  player_image?: string;
+  stats?: { goals?: number | null; assists?: number | null; minutes?: number | null };
+};
+
+export type FdioAgg = {
+  name: string;
+  photo?: string;
+  goals: number;
+  assists: number;
+  minutes: number;
+};
+
+function normName(value: string): string {
+  return value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
+}
+
+async function fetchFdioPlayers(): Promise<FdioPlayer[]> {
+  const key = process.env.FOOTBALLDATA_IO_KEY;
+  if (!key) return [];
+  try {
+    const response = await fetch(`${FDIO_BASE}/teams/${FDIO_TEAM_ID}/players?limit=100`, {
+      headers: { Authorization: `Bearer ${key}` },
+      next: { revalidate: 43200 }, // 12 h
+    });
+    if (!response.ok) throw new Error(`footballdata.io players HTTP ${response.status}`);
+    const json = (await response.json()) as { data?: { players?: FdioPlayer[] } };
+    return Array.isArray(json.data?.players) ? json.data.players : [];
+  } catch (error) {
+    console.warn("[madrid] footballdata.io players unavailable:", error);
+    return [];
+  }
+}
+
+const getFdioPlayers = unstable_cache(fetchFdioPlayers, ["madrid-fdio-players-v1"], {
+  revalidate: 43200,
+});
+
+// Agrega las filas por jugador (el endpoint devuelve una por competicion) y
+// deja un indice por nombre normalizado para cruzarlo con el roster de ESPN.
+async function getFdioByName(): Promise<Map<string, FdioAgg>> {
+  const players = await getFdioPlayers();
+  const byId = new Map<number, FdioAgg & { keys: Set<string> }>();
+  for (const player of players) {
+    const id = player.player_id;
+    if (id == null) continue;
+    const entry =
+      byId.get(id) ??
+      ({ name: player.known_name ?? player.player_name ?? "", goals: 0, assists: 0, minutes: 0, keys: new Set<string>() } as FdioAgg & { keys: Set<string> });
+    entry.goals += Number(player.stats?.goals) || 0;
+    entry.assists += Number(player.stats?.assists) || 0;
+    entry.minutes += Number(player.stats?.minutes) || 0;
+    const image = player.player_image ?? "";
+    if (image && !image.includes("default") && !entry.photo) entry.photo = image;
+    for (const candidate of [player.known_name, player.player_name, `${player.first_name ?? ""} ${player.last_name ?? ""}`]) {
+      if (candidate && candidate.trim()) entry.keys.add(normName(candidate));
+    }
+    byId.set(id, entry);
+  }
+  const byName = new Map<string, FdioAgg>();
+  for (const entry of byId.values()) {
+    const agg: FdioAgg = { name: entry.name, photo: entry.photo, goals: entry.goals, assists: entry.assists, minutes: entry.minutes };
+    for (const key of entry.keys) byName.set(key, agg);
+  }
+  return byName;
+}
+
 // --- Plantilla (fuente keyless: roster de ESPN) ---
 type EspnAthlete = {
   displayName?: string | null;
@@ -469,22 +548,32 @@ async function buildSquad(): Promise<SquadPlayer[]> {
       const athletes = data.athletes ?? [];
       if (athletes.length === 0) continue;
 
+      // Capa de footballdata.io: foto real + goles/asistencias donde exista.
+      const fdio = await getFdioByName();
+
       return athletes
         .filter((athlete) => athlete.displayName)
-        .map((athlete) => ({
-          name: athlete.displayName as string,
-          position: positionGroup(athlete.position?.abbreviation),
-          positionName:
-            POSITION_NAMES[athlete.position?.name ?? ""] ??
-            positionGroup(athlete.position?.abbreviation).replace(/e?s$/, ""),
-          positionAbbr: athlete.position?.abbreviation ?? "",
-          number: athlete.jersey ? Number(athlete.jersey) || undefined : undefined,
-          age: typeof athlete.age === "number" ? athlete.age : undefined,
-          height: heightLabel(athlete.height),
-          weight: weightLabel(athlete.weight),
-          country: athlete.citizenship ?? athlete.flag?.alt ?? undefined,
-          countryFlag: athlete.flag?.href ?? undefined,
-        }));
+        .map((athlete) => {
+          const name = athlete.displayName as string;
+          const extra = fdio.get(normName(name));
+          return {
+            name,
+            position: positionGroup(athlete.position?.abbreviation),
+            positionName:
+              POSITION_NAMES[athlete.position?.name ?? ""] ??
+              positionGroup(athlete.position?.abbreviation).replace(/e?s$/, ""),
+            positionAbbr: athlete.position?.abbreviation ?? "",
+            number: athlete.jersey ? Number(athlete.jersey) || undefined : undefined,
+            age: typeof athlete.age === "number" ? athlete.age : undefined,
+            height: heightLabel(athlete.height),
+            weight: weightLabel(athlete.weight),
+            country: athlete.citizenship ?? athlete.flag?.alt ?? undefined,
+            countryFlag: athlete.flag?.href ?? undefined,
+            photo: extra?.photo,
+            goals: extra?.goals ? extra.goals : undefined,
+            assists: extra?.assists ? extra.assists : undefined,
+          };
+        });
     } catch (error) {
       console.warn("[madrid] squad unavailable:", error);
     }
@@ -496,7 +585,7 @@ export const getSquad = unstable_cache(buildSquad, ["madrid-squad-v1"], {
   revalidate: 3600,
 });
 
-// --- Goleadores del Madrid en LaLiga (football-data.org; requiere API key) ---
+// --- Goleadores del Madrid ---
 type FootballDataScorer = {
   player?: { name?: string | null };
   team?: { id?: number; name?: string | null };
@@ -505,7 +594,23 @@ type FootballDataScorer = {
   penalties?: number | null;
 };
 
+// Preferido: footballdata.io agrega goles/asistencias de toda la plantilla en la
+// temporada. Fallback: top de LaLiga de football-data.org filtrado al Madrid.
 async function buildScorers(): Promise<Scorer[]> {
+  const fdio = await getFdioByName();
+  if (fdio.size > 0) {
+    const seen = new Set<string>();
+    const scorers: Scorer[] = [];
+    for (const agg of fdio.values()) {
+      if (seen.has(agg.name) || agg.goals <= 0) continue;
+      seen.add(agg.name);
+      scorers.push({ name: agg.name, goals: agg.goals, assists: agg.assists, penalties: 0 });
+    }
+    if (scorers.length > 0) {
+      return scorers.sort((a, b) => b.goals - a.goals || b.assists - a.assists);
+    }
+  }
+
   const apiKey = process.env.FOOTBALL_DATA_API_KEY;
   if (!apiKey) return [];
   try {

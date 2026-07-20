@@ -68,7 +68,9 @@ export type SquadPlayer = {
   weight?: string; // ej. "78 kg"
   country?: string;
   countryFlag?: string; // URL de la bandera
-  photo?: string; // foto del jugador (vacio hasta integrar API con fotos)
+  photo?: string; // foto del jugador (footballdata.io; vacio si no hay)
+  goals?: number; // goles en la temporada (footballdata.io)
+  assists?: number; // asistencias en la temporada (footballdata.io)
 };
 
 export type Scorer = {
