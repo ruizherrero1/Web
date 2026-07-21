@@ -205,6 +205,41 @@ async function fetchAllLeagues(season: number): Promise<MadridMatch[]> {
   );
 }
 
+// Rango de fechas ESPN "YYYYMMDD-YYYYMMDD" desde hoy hasta +days.
+function espnDateRange(days: number): string {
+  const now = new Date();
+  const start = now.toISOString().slice(0, 10).replaceAll("-", "");
+  const end = new Date(now.getTime() + days * 86_400_000).toISOString().slice(0, 10).replaceAll("-", "");
+  return `${start}-${end}`;
+}
+
+// El endpoint "schedule por equipo" de ESPN va vacio en pretemporada, pero el
+// "scoreboard" por liga y fechas ya trae el calendario nuevo. Consultamos cada
+// liga en la ventana proxima y filtramos los partidos del Madrid.
+async function fetchLeagueScoreboard(league: LeagueConfig): Promise<MadridMatch[]> {
+  const url = `${ESPN_SITE}/${league.slug}/scoreboard?dates=${espnDateRange(180)}&limit=200`;
+  const response = await fetch(url, { next: { revalidate: 300 } });
+  if (!response.ok) throw new Error(`ESPN scoreboard ${league.slug} HTTP ${response.status}`);
+  const data = (await response.json()) as EspnScheduleResponse;
+  return (data.events ?? [])
+    .filter((event) =>
+      event.competitions?.[0]?.competitors?.some((c) => c.team?.id === ESPN_TEAM_ID),
+    )
+    .map((event) => normalizeEvent(event, league))
+    .filter((match): match is MadridMatch => match !== null);
+}
+
+async function fetchAllScoreboards(): Promise<MadridMatch[]> {
+  const results = await Promise.allSettled(LEAGUES.map((league) => fetchLeagueScoreboard(league)));
+  const matches: MadridMatch[] = [];
+  for (const [index, result] of results.entries()) {
+    if (result.status === "fulfilled") matches.push(...result.value);
+    else console.warn(`[madrid] scoreboard ${LEAGUES[index].slug} unavailable:`, result.reason);
+  }
+  const byId = new Map(matches.map((match) => [match.id, match]));
+  return Array.from(byId.values());
+}
+
 // --- Proximos partidos via football-data.org (requiere API key) ---
 // Publica el calendario de LaLiga/Champions normalmente antes que ESPN.
 type FootballDataTeam = {
@@ -313,15 +348,16 @@ function mergeCalendar(primary: MadridMatch[], secondary: MadridMatch[]): Madrid
 async function buildMadridData(): Promise<MadridData> {
   const season = currentSeason();
 
-  // Fuente principal: ESPN de la campana actual. Complemento: proximos partidos
-  // de football-data.org (suele publicar el calendario de LaLiga/Champions antes
-  // que ESPN), asi los partidos futuros aparecen en cuanto la fuente los tiene.
-  const [espnCurrent, fdUpcoming] = await Promise.all([
+  // Fuentes: (1) schedule por equipo de ESPN (resultados de la campana actual),
+  // (2) scoreboard por liga de ESPN, que ya trae el calendario nuevo cuando el
+  // schedule por equipo aun va vacio, y (3) proximos de football-data.org.
+  const [espnCurrent, espnUpcoming, fdUpcoming] = await Promise.all([
     fetchAllLeagues(season),
+    fetchAllScoreboards(),
     fetchFootballDataUpcoming(),
   ]);
 
-  let matches = mergeCalendar(espnCurrent, fdUpcoming);
+  let matches = mergeCalendar(mergeCalendar(espnCurrent, espnUpcoming), fdUpcoming);
   let usedSeason = season;
 
   // Si la campana nueva aun no tiene NADA publicado, mostramos solo los ultimos

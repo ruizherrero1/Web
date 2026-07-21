@@ -249,11 +249,8 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
     >
       {/* Hero */}
       <section className="relative overflow-hidden border-b border-[var(--rm-hero-border)] bg-gradient-to-br from-[var(--rm-hero-from)] to-[var(--rm-hero-to)] text-white">
-        <div className="pointer-events-none absolute inset-0 select-none overflow-hidden">
-          <span className="absolute -right-8 -top-12 text-[20rem] leading-none opacity-[0.05]">👑</span>
-        </div>
-        <div className="container-shell relative py-5 lg:py-10">
-          <div className="mb-3 flex justify-end lg:mb-6">
+        <div className="container-shell relative pt-4 pb-6 lg:pt-5 lg:pb-8">
+          <div className="mb-2 flex justify-end">
             <ThemeSelector activeTheme={activeTheme} onThemeChange={handleThemeChange} />
           </div>
           <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr] lg:items-end lg:gap-8">
@@ -536,7 +533,7 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
         ) : null}
 
         <p className="mt-8 text-xs leading-5 text-[var(--rm-muted)]">
-          Datos: ESPN · football-data.org
+          Datos: ESPN · footballdata.io · football-data.org
         </p>
       </div>
 
