@@ -64,12 +64,26 @@ export function CompBadge({ comp, label }: { comp: CompId; label: string }) {
   );
 }
 
-function TeamLogo({ src, alt }: { src?: string; alt: string }) {
+function TeamLogo({ src, alt, size = 20 }: { src?: string; alt: string; size?: number }) {
   if (!src) {
-    return <span className="inline-block h-5 w-5 shrink-0 rounded-full bg-[var(--rm-panel-bg)]" />;
+    return (
+      <span
+        className="inline-block shrink-0 rounded-full bg-[var(--rm-panel-bg)]"
+        style={{ width: size, height: size }}
+      />
+    );
   }
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={src} alt={alt} width={20} height={20} className="h-5 w-5 shrink-0 object-contain" />;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={alt}
+      width={size}
+      height={size}
+      className="shrink-0 object-contain"
+      style={{ width: size, height: size }}
+    />
+  );
 }
 
 function TeamName({ name, align = "left" }: { name: string; align?: "left" | "right" }) {
@@ -166,16 +180,16 @@ export function MatchRow({ match, domId }: { match: MadridMatch; domId?: string 
           ) : null}
         </div>
       </div>
-      <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
-        <div className="flex min-w-0 items-center justify-end gap-1.5 text-[13px] font-bold sm:text-sm">
+      <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+        <div className="flex min-w-0 items-center justify-end gap-2 text-[13px] font-bold sm:text-sm">
           <TeamName name={match.home} align="right" />
-          <TeamLogo src={match.homeLogo} alt={match.home} />
+          <TeamLogo src={match.homeLogo} alt={match.home} size={28} />
         </div>
         <div className="shrink-0 whitespace-nowrap rounded bg-[var(--rm-score-bg)] px-2 py-1 text-xs font-black text-[var(--rm-score-text)] sm:px-2.5">
           {score}
         </div>
-        <div className="flex min-w-0 items-center gap-1.5 text-[13px] font-bold sm:text-sm">
-          <TeamLogo src={match.awayLogo} alt={match.away} />
+        <div className="flex min-w-0 items-center gap-2 text-[13px] font-bold sm:text-sm">
+          <TeamLogo src={match.awayLogo} alt={match.away} size={28} />
           <TeamName name={match.away} />
         </div>
       </div>
@@ -184,13 +198,14 @@ export function MatchRow({ match, domId }: { match: MadridMatch; domId?: string 
           {match.round}
         </p>
       ) : null}
-      {match.venue ? (
-        <p className="mt-1 text-center text-xs text-[var(--rm-muted)]">{match.venue}</p>
-      ) : null}
-      <p className="mt-1 flex items-center justify-center gap-1 text-[11px] text-[var(--rm-muted)]">
-        <span aria-hidden>📺</span>
-        {broadcastFor(match.comp)}
-      </p>
+      {/* Estadio a la izquierda, canal de TV a la derecha (una sola linea). */}
+      <div className="mt-1.5 flex items-center justify-between gap-3 text-[11px] text-[var(--rm-muted)]">
+        <span className="min-w-0 truncate">{match.venue ?? ""}</span>
+        <span className="flex shrink-0 items-center gap-1">
+          <span aria-hidden>📺</span>
+          {broadcastFor(match.comp)}
+        </span>
+      </div>
       {expanded ? (
         <div onClick={(event) => event.stopPropagation()}>
           {loading ? (
