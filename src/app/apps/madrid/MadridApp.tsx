@@ -152,6 +152,15 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
     };
   }, [refreshTick]);
 
+  // La clasificacion se carga al montar (la usa la mini-ficha del rival del hero
+  // ademas de la pestana Clasificacion).
+  useEffect(() => {
+    fetch("/api/madrid/standings", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((p) => setStandings(Array.isArray(p.standings) ? p.standings : []))
+      .catch(() => setStandings([]));
+  }, []);
+
   // Carga perezosa por pestana.
   useEffect(() => {
     if (activeTab === "clasificacion" && standings === null) {
@@ -198,6 +207,19 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
   const isHeroLive = heroMatch?.status === "live";
   const countdown =
     heroMatch && !isHeroLive && now ? countdownLabel(heroMatch.startsAt, now) : "";
+
+  // Mini-ficha del rival: su posicion en LaLiga (solo en partidos de LaLiga).
+  const rivalStanding = useMemo(() => {
+    if (!heroMatch || heroMatch.comp !== "laliga" || !standings) return null;
+    const target = normalizeText(heroMatch.rival);
+    return (
+      standings.find((row) => normalizeText(row.team) === target) ??
+      standings.find(
+        (row) => normalizeText(row.team).includes(target) || target.includes(normalizeText(row.team)),
+      ) ??
+      null
+    );
+  }, [heroMatch, standings]);
 
   // Racha: ultimos 5 resultados terminados.
   const lastResults = useMemo(
@@ -339,6 +361,17 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
                   ) : null}
                   {heroMatch.venue ? (
                     <p className="mt-2 text-sm text-[var(--rm-hero-soft)]">{heroMatch.venue}</p>
+                  ) : null}
+                  {rivalStanding ? (
+                    <div className="mt-3 flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.06] px-3 py-2">
+                      <span className="text-xs font-semibold text-[var(--rm-hero-label)]">
+                        {heroMatch.rival}
+                      </span>
+                      <span className="text-xs text-[var(--rm-hero-soft)]">
+                        {rivalStanding.rank}º en LaLiga · {rivalStanding.points} pts ·{" "}
+                        {rivalStanding.wins}-{rivalStanding.draws}-{rivalStanding.losses}
+                      </span>
+                    </div>
                   ) : null}
                 </div>
               ) : (
