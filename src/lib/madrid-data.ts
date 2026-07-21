@@ -114,11 +114,12 @@ function toPens(competitor?: EspnCompetitor): number | undefined {
 }
 
 function teamLogo(competitor?: EspnCompetitor): string | undefined {
-  return (
-    competitor?.team?.logo ??
-    competitor?.team?.logos?.[0]?.href ??
-    undefined
-  );
+  const direct = competitor?.team?.logo ?? competitor?.team?.logos?.[0]?.href;
+  if (direct) return direct;
+  // Fallback: escudo por id en el CDN de ESPN (algunos eventos del scoreboard
+  // vienen sin logo, sobre todo los futuros).
+  const id = competitor?.team?.id;
+  return id ? `https://a.espncdn.com/i/teamlogos/soccer/500/${id}.png` : undefined;
 }
 
 function statusOf(event: EspnEvent, competitionStatus?: EspnStatusType) {
@@ -768,6 +769,39 @@ function weightLabel(pounds?: number | null): string | undefined {
   return `${Math.round(pounds * 0.453592)} kg`;
 }
 
+// Las fotos de footballdata.io estan en URL predecible
+// (/img/player/{pais}-{nombre}.png). Para los jugadores que su endpoint de
+// equipo no devuelve (solo trae ~11), construimos la URL desde el nombre y la
+// nacionalidad de ESPN; si no existe, el <img> cae a las iniciales (onError).
+function slugify(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+const NATIONALITY_SLUG: Record<string, string> = {
+  turkiye: "turkey",
+  "korea-republic": "south-korea",
+  "cote-d-ivoire": "ivory-coast",
+};
+
+// Algunos nombres de ESPN no coinciden con el slug de footballdata.io.
+const PHOTO_NAME_ALIAS: Record<string, string> = {
+  "dani-carvajal": "daniel-carvajal",
+};
+
+function fdioPhotoUrl(name: string, nationality?: string): string | undefined {
+  if (!nationality) return undefined;
+  const natRaw = slugify(nationality);
+  const nat = NATIONALITY_SLUG[natRaw] ?? natRaw;
+  const nameSlug = PHOTO_NAME_ALIAS[slugify(name)] ?? slugify(name);
+  if (!nat || !nameSlug) return undefined;
+  return `https://footballdata.io/img/player/${nat}-${nameSlug}.png`;
+}
+
 async function buildSquad(): Promise<SquadPlayer[]> {
   const season = currentSeason();
   for (const target of [season, season - 1]) {
@@ -802,7 +836,7 @@ async function buildSquad(): Promise<SquadPlayer[]> {
             weight: weightLabel(athlete.weight),
             country: athlete.citizenship ?? athlete.flag?.alt ?? undefined,
             countryFlag: athlete.flag?.href ?? undefined,
-            photo: extra?.photo,
+            photo: extra?.photo ?? fdioPhotoUrl(name, athlete.citizenship ?? athlete.flag?.alt ?? undefined),
             goals: extra?.goals ? extra.goals : undefined,
             assists: extra?.assists ? extra.assists : undefined,
             minutes: extra?.minutes ? extra.minutes : undefined,
@@ -877,3 +911,43 @@ async function buildScorers(): Promise<Scorer[]> {
 export const getMadridScorers = unstable_cache(buildScorers, ["madrid-scorers-v1"], {
   revalidate: 600,
 });
+
+// Goleadores de LaLiga / Champions (football-data.org). El Madrid queda marcado
+// para resaltarlo. En pretemporada la competicion actual aun no tiene goles.
+const FD_COMPETITION: Record<"laliga" | "champions", string> = {
+  laliga: "PD",
+  champions: "CL",
+};
+
+async function fetchLeagueScorers(comp: "laliga" | "champions"): Promise<Scorer[]> {
+  const apiKey = process.env.FOOTBALL_DATA_API_KEY;
+  if (!apiKey) return [];
+  try {
+    const response = await fetch(
+      `https://api.football-data.org/v4/competitions/${FD_COMPETITION[comp]}/scorers?limit=20`,
+      { headers: { "X-Auth-Token": apiKey }, next: { revalidate: 3600 } },
+    );
+    if (!response.ok) throw new Error(`football-data ${comp} scorers HTTP ${response.status}`);
+    const data = (await response.json()) as { scorers?: FootballDataScorer[] };
+    return (data.scorers ?? [])
+      .filter((scorer) => scorer.player?.name)
+      .map((scorer) => ({
+        name: String(scorer.player?.name),
+        team: scorer.team?.name ?? undefined,
+        isMadrid: scorer.team?.id === 86 || /real madrid/i.test(scorer.team?.name ?? ""),
+        goals: Number(scorer.goals) || 0,
+        assists: Number(scorer.assists) || 0,
+        penalties: Number(scorer.penalties) || 0,
+      }))
+      .sort((a, b) => b.goals - a.goals || a.name.localeCompare(b.name));
+  } catch (error) {
+    console.warn(`[madrid] ${comp} scorers unavailable:`, error);
+    return [];
+  }
+}
+
+export async function getLeagueScorers(comp: "laliga" | "champions"): Promise<Scorer[]> {
+  return unstable_cache(() => fetchLeagueScorers(comp), ["madrid-league-scorers", comp], {
+    revalidate: 3600,
+  })();
+}

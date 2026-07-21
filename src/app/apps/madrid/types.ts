@@ -127,7 +127,11 @@ export type Scorer = {
   goals: number;
   assists: number;
   penalties: number;
+  team?: string; // solo en clasificaciones de liga (no en las del propio Madrid)
+  isMadrid?: boolean;
 };
+
+export type ScorerComp = "madrid" | "laliga" | "champions";
 
 export type MadridData = {
   matches: MadridMatch[];
