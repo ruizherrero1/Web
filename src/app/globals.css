@@ -206,6 +206,41 @@ body:has(.cine-app-shell) {
   background-color: #050404;
 }
 
+/* Real Madrid: el body se pinta con el fondo oscuro del tema para que la barra
+   de estado (safe-area superior) y el overscroll se vean del color de la app y
+   no la franja clara del sitio. */
+body:has(.madrid-app-shell) {
+  background-color: #0a0f1c;
+}
+
+/* Real Madrid como app instalada: se oculta cabecera/pie del sitio. */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  body:has(.madrid-app-shell) > header,
+  body:has(.madrid-app-shell) > footer {
+    display: none;
+  }
+
+  body:has(.madrid-app-shell) main {
+    min-height: 100vh;
+  }
+}
+
+body[data-madrid-standalone="true"] > header,
+body[data-madrid-standalone="true"] > footer {
+  display: none;
+}
+
+body[data-madrid-standalone="true"] main {
+  min-height: 100vh;
+}
+
+/* Evita el zoom de iOS al enfocar inputs dentro de la app */
+.madrid-app-shell input,
+.madrid-app-shell select,
+.madrid-app-shell textarea {
+  font-size: 16px;
+}
+
 /* Cine como app instalada: al abrir desde el icono de inicio (display-mode:
    standalone) se oculta la cabecera/pie del sitio para que se vea como app. */
 @media (display-mode: standalone), (display-mode: fullscreen) {

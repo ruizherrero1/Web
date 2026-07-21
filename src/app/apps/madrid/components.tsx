@@ -399,6 +399,43 @@ function initials(name: string): string {
   return (first + last).toUpperCase();
 }
 
+// Foto del jugador con caida a iniciales si la URL no existe (algunas se
+// construyen por nombre y pueden no estar en footballdata.io).
+function PlayerAvatar({
+  player,
+  size,
+  className = "",
+}: {
+  player: SquadPlayer;
+  size: number;
+  className?: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (player.photo && !failed) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={player.photo}
+        alt={player.name}
+        width={size}
+        height={size}
+        loading="lazy"
+        onError={() => setFailed(true)}
+        className={`rounded-full bg-[var(--rm-panel-bg)] object-cover ${className}`}
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+  return (
+    <span
+      className={`flex items-center justify-center rounded-full bg-[var(--rm-panel-bg)] font-black text-[var(--rm-accent)] ${className}`}
+      style={{ width: size, height: size, fontSize: Math.round(size * 0.32) }}
+    >
+      {initials(player.name)}
+    </span>
+  );
+}
+
 function PlayerCard({ player, onSelect }: { player: SquadPlayer; onSelect: (player: SquadPlayer) => void }) {
   const details = [
     player.age ? `${player.age} años` : null,
@@ -411,20 +448,7 @@ function PlayerCard({ player, onSelect }: { player: SquadPlayer; onSelect: (play
       onClick={() => onSelect(player)}
     >
       <div className="relative shrink-0">
-        {player.photo ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={player.photo}
-            alt={player.name}
-            width={44}
-            height={44}
-            className="h-11 w-11 rounded-full object-cover"
-          />
-        ) : (
-          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--rm-panel-bg)] text-sm font-black text-[var(--rm-accent)]">
-            {initials(player.name)}
-          </span>
-        )}
+        <PlayerAvatar player={player} size={44} />
         {player.number ? (
           <span className="absolute -bottom-1 -right-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-[var(--rm-card-bg)] bg-[var(--rm-accent)] px-1 text-[10px] font-black text-[var(--rm-accent-fg)]">
             {player.number}
@@ -505,20 +529,7 @@ function PlayerModal({ player, onClose }: { player: SquadPlayer; onClose: () => 
         onClick={(event) => event.stopPropagation()}
       >
         <div className="relative flex items-center gap-4 bg-[var(--rm-card-header)] p-5 text-white">
-          {player.photo ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={player.photo}
-              alt={player.name}
-              width={80}
-              height={80}
-              className="h-20 w-20 rounded-full border-2 border-white/30 object-cover"
-            />
-          ) : (
-            <span className="flex h-20 w-20 items-center justify-center rounded-full bg-white/10 text-2xl font-black text-[var(--rm-accent)]">
-              {initials(player.name)}
-            </span>
-          )}
+          <PlayerAvatar player={player} size={80} className="border-2 border-white/30" />
           <div className="min-w-0">
             <p className="flex items-center gap-2 text-lg font-black leading-tight">
               {player.countryFlag ? (
@@ -605,20 +616,30 @@ export function SquadList({ players }: { players: SquadPlayer[] }) {
   );
 }
 
-export function ScorersTable({ scorers }: { scorers: Scorer[] }) {
+export function ScorersTable({
+  scorers,
+  title = "Goleadores del Madrid",
+  subtitle = "esta temporada",
+}: {
+  scorers: Scorer[];
+  title?: string;
+  subtitle?: string;
+}) {
   const hasAssists = scorers.some((scorer) => scorer.assists > 0);
   const hasPenalties = scorers.some((scorer) => scorer.penalties > 0);
+  const hasTeam = scorers.some((scorer) => scorer.team);
   return (
     <article className="overflow-hidden rounded-lg border border-[var(--rm-border)] bg-[var(--rm-card-bg)] shadow-sm">
       <div className="flex items-center justify-between border-b border-[var(--rm-border)] bg-[var(--rm-card-header)] px-4 py-3 text-white">
-        <h2 className="text-lg font-bold">Goleadores del Madrid</h2>
-        <span className="text-xs font-semibold text-white/70">esta temporada</span>
+        <h2 className="text-lg font-bold">{title}</h2>
+        <span className="text-xs font-semibold text-white/70">{subtitle}</span>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-xs sm:text-sm">
           <thead className="bg-[var(--rm-panel-bg)] text-left text-[10px] uppercase tracking-[0.08em] text-[var(--rm-muted)] sm:text-xs">
             <tr>
               <th className="px-2 py-2 sm:px-4 sm:py-3">Jugador</th>
+              {hasTeam ? <th className="px-2 py-2 sm:px-4 sm:py-3">Equipo</th> : null}
               <th className="px-1.5 py-2 text-center sm:px-3 sm:py-3">Goles</th>
               {hasPenalties ? (
                 <th className="hidden px-3 py-3 text-center sm:table-cell">Penaltis</th>
@@ -630,13 +651,27 @@ export function ScorersTable({ scorers }: { scorers: Scorer[] }) {
           </thead>
           <tbody className="divide-y divide-[var(--rm-border-inner)]">
             {scorers.map((scorer, index) => (
-              <tr key={scorer.name} className={index < 3 ? "bg-[var(--rm-row-hl)]" : undefined}>
+              <tr
+                key={`${scorer.name}-${scorer.team ?? ""}`}
+                className={
+                  scorer.isMadrid
+                    ? "bg-[var(--rm-row-hl)] font-semibold"
+                    : index < 3
+                      ? "bg-[var(--rm-row-hl)]"
+                      : undefined
+                }
+              >
                 <td className="min-w-0 px-2 py-2 font-bold text-[var(--rm-text)] sm:px-4 sm:py-3">
                   <span className="mr-1 inline-flex h-5 w-5 items-center justify-center rounded bg-[var(--rm-panel-bg)] text-[10px] text-[var(--rm-muted)] sm:mr-2 sm:h-6 sm:w-6 sm:text-xs">
                     {index + 1}
                   </span>
-                  {scorer.name}
+                  <span className={scorer.isMadrid ? "text-[var(--rm-accent)]" : undefined}>
+                    {scorer.name}
+                  </span>
                 </td>
+                {hasTeam ? (
+                  <td className="px-2 py-2 text-[var(--rm-muted)] sm:px-4 sm:py-3">{scorer.team}</td>
+                ) : null}
                 <td className="px-1.5 py-2 text-center text-sm font-black text-[var(--rm-accent)] sm:px-3 sm:py-3 sm:text-base">
                   {scorer.goals}
                 </td>

@@ -23,6 +23,7 @@ import type {
   MadridData,
   MadridMatch,
   Scorer,
+  ScorerComp,
   SquadPlayer,
   StandingRow,
   TabId,
@@ -64,7 +65,12 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
   const [standingsView, setStandingsView] = useState<"laliga" | "champions">("laliga");
   const [champions, setChampions] = useState<ChampionsStandings | null>(null);
   const [squad, setSquad] = useState<SquadPlayer[] | null>(null);
-  const [scorers, setScorers] = useState<Scorer[] | null>(null);
+  const [scorersView, setScorersView] = useState<ScorerComp>("madrid");
+  const [scorersByComp, setScorersByComp] = useState<Record<ScorerComp, Scorer[] | null>>({
+    madrid: null,
+    laliga: null,
+    champions: null,
+  });
 
   // Reloj para la cuenta atras del hero.
   const [now, setNow] = useState<number | null>(null);
@@ -166,13 +172,19 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
         .then((p) => setChampions({ rows: Array.isArray(p.rows) ? p.rows : [], isPrevious: !!p.isPrevious, seasonYear: p.seasonYear }))
         .catch(() => setChampions({ rows: [], isPrevious: false }));
     }
-    if (activeTab === "goleadores" && scorers === null) {
-      fetch("/api/madrid/scorers", { cache: "no-store" })
+    if (activeTab === "goleadores" && scorersByComp[scorersView] === null) {
+      const query = scorersView === "madrid" ? "" : `?comp=${scorersView}`;
+      fetch(`/api/madrid/scorers${query}`, { cache: "no-store" })
         .then((r) => r.json())
-        .then((p) => setScorers(Array.isArray(p.scorers) ? p.scorers : []))
-        .catch(() => setScorers([]));
+        .then((p) =>
+          setScorersByComp((prev) => ({
+            ...prev,
+            [scorersView]: Array.isArray(p.scorers) ? p.scorers : [],
+          })),
+        )
+        .catch(() => setScorersByComp((prev) => ({ ...prev, [scorersView]: [] })));
     }
-  }, [activeTab, standings, squad, scorers, standingsView, champions]);
+  }, [activeTab, standings, squad, scorersByComp, scorersView, standingsView, champions]);
 
   function handleRefresh() {
     setRefreshTick((t) => t + 1);
@@ -244,7 +256,7 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
 
   return (
     <div
-      className="min-h-screen bg-[var(--rm-page-bg)] text-[var(--rm-text)]"
+      className="madrid-app-shell min-h-screen bg-[var(--rm-page-bg)] text-[var(--rm-text)]"
       style={themes[activeTheme] as React.CSSProperties}
     >
       {/* Hero */}
@@ -520,13 +532,48 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
 
         {activeTab === "goleadores" ? (
           <section className="mt-6">
-            {scorers === null ? (
+            <div className="mb-4 grid grid-cols-3 rounded-lg border border-[var(--rm-border)] bg-[var(--rm-card-bg)] p-1 shadow-sm">
+              {(
+                [
+                  ["madrid", "Real Madrid"],
+                  ["laliga", "LaLiga"],
+                  ["champions", "Champions"],
+                ] as [ScorerComp, string][]
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setScorersView(key)}
+                  className={`focus-ring min-h-10 rounded-md px-2 text-sm font-bold transition ${
+                    scorersView === key
+                      ? "bg-[var(--rm-accent)] text-[var(--rm-accent-fg)] shadow-sm"
+                      : "text-[var(--rm-muted)] hover:text-[var(--rm-text)]"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {scorersByComp[scorersView] === null ? (
               <p className="text-sm text-[var(--rm-muted)]">Cargando goleadores…</p>
-            ) : scorers.length > 0 ? (
-              <ScorersTable scorers={scorers} />
+            ) : (scorersByComp[scorersView]?.length ?? 0) > 0 ? (
+              <ScorersTable
+                scorers={scorersByComp[scorersView] as Scorer[]}
+                title={
+                  scorersView === "madrid"
+                    ? "Goleadores del Madrid"
+                    : scorersView === "laliga"
+                      ? "Máximos goleadores · LaLiga"
+                      : "Máximos goleadores · Champions"
+                }
+                subtitle={scorersView === "madrid" ? "esta temporada" : "temporada actual"}
+              />
             ) : (
               <p className="rounded-lg border border-[var(--rm-border)] bg-[var(--rm-card-bg)] p-4 text-sm text-[var(--rm-muted)]">
-                La tabla de goleadores se llena en cuanto empiece LaLiga.
+                {scorersView === "madrid"
+                  ? "La tabla se llena en cuanto el Madrid marque esta temporada."
+                  : "Aún no hay goleadores: se llenará cuando arranque la competición."}
               </p>
             )}
           </section>
