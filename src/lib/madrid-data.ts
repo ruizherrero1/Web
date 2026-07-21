@@ -904,6 +904,27 @@ const getApiFootballSquad = unstable_cache(fetchApiFootballSquad, ["madrid-af-sq
   revalidate: 86400,
 });
 
+// La plantilla de API-Football mezcla primer equipo + Castilla (numeros
+// duplicados) y algun jugador sin dorsal que no es del club (ruido). Nos
+// quedamos con el primer equipo: dorsal presente y <= 30 (o que haya jugado
+// segun footballdata.io), y ante un mismo numero preferimos al que ha jugado o,
+// en su defecto, al mayor (los canteranos comparten dorsal con su titular).
+function firstTeamOnly(players: SquadPlayer[]): SquadPlayer[] {
+  const played = (p: SquadPlayer) => (p.minutes ?? 0) > 0 || (p.goals ?? 0) > 0;
+  const eligible = players.filter(
+    (p) => typeof p.number === "number" && (p.number <= 30 || played(p)),
+  );
+  const byNumber = new Map<number, SquadPlayer>();
+  const score = (p: SquadPlayer) => (played(p) ? 1000 : 0) + (p.age ?? 0);
+  for (const player of eligible) {
+    const current = byNumber.get(player.number as number);
+    if (!current || score(player) > score(current)) {
+      byNumber.set(player.number as number, player);
+    }
+  }
+  return Array.from(byNumber.values());
+}
+
 async function buildSquad(): Promise<SquadPlayer[]> {
   const [apiSquad, roster, fdio] = await Promise.all([
     getApiFootballSquad(),
@@ -916,7 +937,7 @@ async function buildSquad(): Promise<SquadPlayer[]> {
   // stats de footballdata.io (goles/asistencias/minutos).
   if (apiSquad.length > 0) {
     const bio = buildEspnBio(roster);
-    return apiSquad
+    const mapped = apiSquad
       .filter((player) => player.name)
       .map((player) => {
         const apiName = player.name as string;
@@ -942,6 +963,7 @@ async function buildSquad(): Promise<SquadPlayer[]> {
           appearances: stats?.appearances ? stats.appearances : undefined,
         };
       });
+    return firstTeamOnly(mapped);
   }
 
   // Fallback sin API-Football: roster de ESPN + capa de footballdata.io.
