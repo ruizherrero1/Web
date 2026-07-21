@@ -183,13 +183,13 @@ export function MatchRow({ match, domId }: { match: MadridMatch; domId?: string 
       <div className="mt-2 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
         <div className="flex min-w-0 items-center justify-end gap-2 text-[13px] font-bold sm:text-sm">
           <TeamName name={match.home} align="right" />
-          <TeamLogo src={match.homeLogo} alt={match.home} size={28} />
+          <TeamLogo src={match.homeLogo} alt={match.home} size={34} />
         </div>
         <div className="shrink-0 whitespace-nowrap rounded bg-[var(--rm-score-bg)] px-2 py-1 text-xs font-black text-[var(--rm-score-text)] sm:px-2.5">
           {score}
         </div>
         <div className="flex min-w-0 items-center gap-2 text-[13px] font-bold sm:text-sm">
-          <TeamLogo src={match.awayLogo} alt={match.away} size={28} />
+          <TeamLogo src={match.awayLogo} alt={match.away} size={34} />
           <TeamName name={match.away} />
         </div>
       </div>

@@ -11,7 +11,6 @@ import {
   ThemeSelector,
 } from "./components";
 import {
-  countdownLabel,
   formatLongMadridDate,
   formatMadridTime,
   normalizeText,
@@ -45,6 +44,14 @@ type MadridAppProps = {
   initialData?: MadridData | null;
 };
 
+function HeroCrest({ src, alt }: { src?: string; alt: string }) {
+  if (!src) return null;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={src} alt={alt} width={30} height={30} className="h-[30px] w-[30px] shrink-0 object-contain" />
+  );
+}
+
 export function MadridApp({ initialData = null }: MadridAppProps) {
   const [activeTab, setActiveTab] = useState<TabId>("partidos");
   const [activeTheme, setActiveTheme] = useState<ThemeId>("noche");
@@ -71,17 +78,6 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
     laliga: null,
     champions: null,
   });
-
-  // Reloj para la cuenta atras del hero.
-  const [now, setNow] = useState<number | null>(null);
-  useEffect(() => {
-    const initialId = window.setTimeout(() => setNow(Date.now()), 0);
-    const id = window.setInterval(() => setNow(Date.now()), 30_000);
-    return () => {
-      window.clearTimeout(initialId);
-      window.clearInterval(id);
-    };
-  }, []);
 
   useEffect(() => {
     const saved = localStorage.getItem(THEME_STORAGE_KEY) as ThemeId | null;
@@ -205,8 +201,6 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
   const nextMatch = matches.find((m) => m.status === "upcoming");
   const heroMatch = liveMatch ?? nextMatch;
   const isHeroLive = heroMatch?.status === "live";
-  const countdown =
-    heroMatch && !isHeroLive && now ? countdownLabel(heroMatch.startsAt, now) : "";
 
   // Mini-ficha del rival: su posicion en LaLiga (solo en partidos de LaLiga).
   const rivalStanding = useMemo(() => {
@@ -338,7 +332,10 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
               {heroMatch ? (
                 <div className="mt-4">
                   <div className="flex flex-wrap items-center gap-2 text-lg font-bold">
-                    <span>{heroMatch.home}</span>
+                    <span className="inline-flex items-center gap-2">
+                      <HeroCrest src={heroMatch.homeLogo} alt={heroMatch.home} />
+                      {heroMatch.home}
+                    </span>
                     {isHeroLive ? (
                       <span className="shrink-0 rounded bg-white/15 px-2.5 py-1 text-sm font-black">
                         {scoreLabel(heroMatch)}
@@ -346,7 +343,10 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
                     ) : (
                       <span className="text-sm font-bold text-[var(--rm-hero-label)]">vs</span>
                     )}
-                    <span>{heroMatch.away}</span>
+                    <span className="inline-flex items-center gap-2">
+                      {heroMatch.away}
+                      <HeroCrest src={heroMatch.awayLogo} alt={heroMatch.away} />
+                    </span>
                   </div>
                   <p className="mt-3 flex flex-wrap items-center gap-2 text-sm text-[var(--rm-hero-soft)]">
                     <CompBadge comp={heroMatch.comp} label={heroMatch.compLabel} />
@@ -354,14 +354,6 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
                       {formatLongMadridDate(heroMatch.startsAt)} · {formatMadridTime(heroMatch.startsAt)}
                     </span>
                   </p>
-                  {!isHeroLive && countdown ? (
-                    <p className="mt-2 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.08] px-3 py-1.5 text-sm font-semibold">
-                      Empieza en {countdown}
-                    </p>
-                  ) : null}
-                  {heroMatch.venue ? (
-                    <p className="mt-2 text-sm text-[var(--rm-hero-soft)]">{heroMatch.venue}</p>
-                  ) : null}
                   {rivalStanding ? (
                     <div className="mt-3 flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.06] px-3 py-2">
                       <span className="text-xs font-semibold text-[var(--rm-hero-label)]">
