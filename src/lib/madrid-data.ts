@@ -802,7 +802,7 @@ function fdioPhotoUrl(name: string, nationality?: string): string | undefined {
   return `https://footballdata.io/img/player/${nat}-${nameSlug}.png`;
 }
 
-async function buildSquad(): Promise<SquadPlayer[]> {
+async function fetchEspnRoster(): Promise<EspnAthlete[]> {
   const season = currentSeason();
   for (const target of [season, season - 1]) {
     try {
@@ -812,45 +812,165 @@ async function buildSquad(): Promise<SquadPlayer[]> {
       );
       if (!response.ok) continue;
       const data = (await response.json()) as { athletes?: EspnAthlete[] };
-      const athletes = data.athletes ?? [];
-      if (athletes.length === 0) continue;
-
-      // Capa de footballdata.io: foto real + goles/asistencias donde exista.
-      const fdio = await getFdioByName();
-
-      return athletes
-        .filter((athlete) => athlete.displayName)
-        .map((athlete) => {
-          const name = athlete.displayName as string;
-          const extra = fdio.get(normName(name));
-          return {
-            name,
-            position: positionGroup(athlete.position?.abbreviation),
-            positionName:
-              POSITION_NAMES[athlete.position?.name ?? ""] ??
-              positionGroup(athlete.position?.abbreviation).replace(/e?s$/, ""),
-            positionAbbr: athlete.position?.abbreviation ?? "",
-            number: athlete.jersey ? Number(athlete.jersey) || undefined : undefined,
-            age: typeof athlete.age === "number" ? athlete.age : undefined,
-            height: heightLabel(athlete.height),
-            weight: weightLabel(athlete.weight),
-            country: athlete.citizenship ?? athlete.flag?.alt ?? undefined,
-            countryFlag: athlete.flag?.href ?? undefined,
-            photo: extra?.photo ?? fdioPhotoUrl(name, athlete.citizenship ?? athlete.flag?.alt ?? undefined),
-            goals: extra?.goals ? extra.goals : undefined,
-            assists: extra?.assists ? extra.assists : undefined,
-            minutes: extra?.minutes ? extra.minutes : undefined,
-            appearances: extra?.appearances ? extra.appearances : undefined,
-          };
-        });
+      const athletes = (data.athletes ?? []).filter((a) => a.displayName);
+      if (athletes.length > 0) return athletes;
     } catch (error) {
-      console.warn("[madrid] squad unavailable:", error);
+      console.warn("[madrid] roster unavailable:", error);
     }
   }
   return [];
 }
 
-export const getSquad = unstable_cache(buildSquad, ["madrid-squad-v1"], {
+// Clave de cruce entre fuentes: apellido + inicial del nombre (API-Football
+// abrevia el nombre, p.ej. "F. Valverde"; ESPN lo trae completo).
+function squadKey(name: string): string {
+  const parts = name.replace(/\./g, " ").trim().split(/\s+/).filter(Boolean);
+  const last = parts[parts.length - 1] ?? "";
+  const firstInitial = (parts[0] ?? "").charAt(0);
+  return `${normName(last)}|${normName(firstInitial)}`;
+}
+
+type EspnBio = {
+  name: string;
+  country?: string;
+  flag?: string;
+  height?: string;
+  weight?: string;
+  age?: number;
+};
+
+function buildEspnBio(athletes: EspnAthlete[]): Map<string, EspnBio> {
+  const map = new Map<string, EspnBio>();
+  for (const athlete of athletes) {
+    const name = athlete.displayName as string;
+    map.set(squadKey(name), {
+      name,
+      country: athlete.citizenship ?? athlete.flag?.alt ?? undefined,
+      flag: athlete.flag?.href ?? undefined,
+      height: heightLabel(athlete.height),
+      weight: weightLabel(athlete.weight),
+      age: typeof athlete.age === "number" ? athlete.age : undefined,
+    });
+  }
+  return map;
+}
+
+// --- Plantilla oficial + fotos actualizadas (API-Football / api-sports.io) ---
+const API_FOOTBALL_TEAM = 541; // Real Madrid en API-Football
+
+type ApiFootballPlayer = {
+  id?: number;
+  name?: string;
+  age?: number | null;
+  number?: number | null;
+  position?: string | null;
+  photo?: string | null;
+};
+
+const AF_POSITION_GROUP: Record<string, string> = {
+  Goalkeeper: "Porteros",
+  Defender: "Defensas",
+  Midfielder: "Centrocampistas",
+  Attacker: "Delanteros",
+};
+const AF_POSITION_NAME: Record<string, string> = {
+  Goalkeeper: "Portero",
+  Defender: "Defensa",
+  Midfielder: "Centrocampista",
+  Attacker: "Delantero",
+};
+
+async function fetchApiFootballSquad(): Promise<ApiFootballPlayer[]> {
+  const key = process.env.API_FOOTBALL_KEY;
+  if (!key) return [];
+  try {
+    const response = await fetch(
+      `https://v3.football.api-sports.io/players/squads?team=${API_FOOTBALL_TEAM}`,
+      { headers: { "x-apisports-key": key }, next: { revalidate: 86400 } },
+    );
+    if (!response.ok) throw new Error(`API-Football squad HTTP ${response.status}`);
+    const data = (await response.json()) as {
+      response?: Array<{ players?: ApiFootballPlayer[] }>;
+    };
+    return data.response?.[0]?.players ?? [];
+  } catch (error) {
+    console.warn("[madrid] API-Football squad unavailable:", error);
+    return [];
+  }
+}
+
+// Plan free 100 req/dia: cache 24 h.
+const getApiFootballSquad = unstable_cache(fetchApiFootballSquad, ["madrid-af-squad-v1"], {
+  revalidate: 86400,
+});
+
+async function buildSquad(): Promise<SquadPlayer[]> {
+  const [apiSquad, roster, fdio] = await Promise.all([
+    getApiFootballSquad(),
+    fetchEspnRoster(),
+    getFdioByName(),
+  ]);
+
+  // Fuente principal: plantilla oficial de API-Football (foto al dia + dorsal),
+  // enriquecida con bio de ESPN (nacionalidad/altura/peso/nombre completo) y
+  // stats de footballdata.io (goles/asistencias/minutos).
+  if (apiSquad.length > 0) {
+    const bio = buildEspnBio(roster);
+    return apiSquad
+      .filter((player) => player.name)
+      .map((player) => {
+        const apiName = player.name as string;
+        const espn = bio.get(squadKey(apiName));
+        const name = espn?.name ?? apiName;
+        const stats = fdio.get(normName(name)) ?? fdio.get(normName(apiName));
+        const position = player.position ?? "";
+        return {
+          name,
+          position: AF_POSITION_GROUP[position] ?? "Otros",
+          positionName: AF_POSITION_NAME[position] ?? position,
+          positionAbbr: "",
+          number: typeof player.number === "number" ? player.number : undefined,
+          age: player.age ?? espn?.age,
+          height: espn?.height,
+          weight: espn?.weight,
+          country: espn?.country,
+          countryFlag: espn?.flag,
+          photo: player.photo ?? stats?.photo ?? fdioPhotoUrl(name, espn?.country),
+          goals: stats?.goals ? stats.goals : undefined,
+          assists: stats?.assists ? stats.assists : undefined,
+          minutes: stats?.minutes ? stats.minutes : undefined,
+          appearances: stats?.appearances ? stats.appearances : undefined,
+        };
+      });
+  }
+
+  // Fallback sin API-Football: roster de ESPN + capa de footballdata.io.
+  return roster.map((athlete) => {
+    const name = athlete.displayName as string;
+    const extra = fdio.get(normName(name));
+    return {
+      name,
+      position: positionGroup(athlete.position?.abbreviation),
+      positionName:
+        POSITION_NAMES[athlete.position?.name ?? ""] ??
+        positionGroup(athlete.position?.abbreviation).replace(/e?s$/, ""),
+      positionAbbr: athlete.position?.abbreviation ?? "",
+      number: athlete.jersey ? Number(athlete.jersey) || undefined : undefined,
+      age: typeof athlete.age === "number" ? athlete.age : undefined,
+      height: heightLabel(athlete.height),
+      weight: weightLabel(athlete.weight),
+      country: athlete.citizenship ?? athlete.flag?.alt ?? undefined,
+      countryFlag: athlete.flag?.href ?? undefined,
+      photo: extra?.photo ?? fdioPhotoUrl(name, athlete.citizenship ?? athlete.flag?.alt ?? undefined),
+      goals: extra?.goals ? extra.goals : undefined,
+      assists: extra?.assists ? extra.assists : undefined,
+      minutes: extra?.minutes ? extra.minutes : undefined,
+      appearances: extra?.appearances ? extra.appearances : undefined,
+    };
+  });
+}
+
+export const getSquad = unstable_cache(buildSquad, ["madrid-squad-v2"], {
   revalidate: 3600,
 });
 
