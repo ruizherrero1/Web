@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CompBadge,
+  LeagueMatchRow,
   LiveBadge,
   MatchRow,
   ScorersTable,
@@ -19,6 +20,8 @@ import {
 import { THEME_STORAGE_KEY, themes } from "./theme";
 import type {
   ChampionsStandings,
+  LeagueCalendar,
+  LeagueId,
   MadridData,
   MadridMatch,
   Scorer,
@@ -36,6 +39,7 @@ const tabs: { id: TabId; label: string; short: string }[] = [
   { id: "clasificacion", label: "Clasificación", short: "Clasif." },
   { id: "plantilla", label: "Plantilla", short: "Plantilla" },
   { id: "goleadores", label: "Goleadores", short: "Goles" },
+  { id: "ligas", label: "Ligas", short: "Ligas" },
 ];
 
 type TimeFilter = "proximos" | "resultados" | "todos";
@@ -72,6 +76,12 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
   const [standingsView, setStandingsView] = useState<"laliga" | "champions">("laliga");
   const [champions, setChampions] = useState<ChampionsStandings | null>(null);
   const [squad, setSquad] = useState<SquadPlayer[] | null>(null);
+  const [ligasLeague, setLigasLeague] = useState<LeagueId>("esp.1");
+  const [ligasTeam, setLigasTeam] = useState<string>("todos");
+  const [leagueCal, setLeagueCal] = useState<Record<LeagueId, LeagueCalendar | null>>({
+    "esp.1": null,
+    "esp.2": null,
+  });
   const [scorersView, setScorersView] = useState<ScorerComp>("madrid");
   const [scorersByComp, setScorersByComp] = useState<Record<ScorerComp, Scorer[] | null>>({
     madrid: null,
@@ -177,6 +187,22 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
         .then((p) => setChampions({ rows: Array.isArray(p.rows) ? p.rows : [], isPrevious: !!p.isPrevious, seasonYear: p.seasonYear }))
         .catch(() => setChampions({ rows: [], isPrevious: false }));
     }
+    if (activeTab === "ligas" && leagueCal[ligasLeague] === null) {
+      fetch(`/api/madrid/calendar?league=${ligasLeague}`, { cache: "no-store" })
+        .then((r) => r.json())
+        .then((p) =>
+          setLeagueCal((prev) => ({
+            ...prev,
+            [ligasLeague]: {
+              matches: Array.isArray(p.matches) ? p.matches : [],
+              teams: Array.isArray(p.teams) ? p.teams : [],
+            },
+          })),
+        )
+        .catch(() =>
+          setLeagueCal((prev) => ({ ...prev, [ligasLeague]: { matches: [], teams: [] } })),
+        );
+    }
     if (activeTab === "goleadores" && scorersByComp[scorersView] === null) {
       const query = scorersView === "madrid" ? "" : `?comp=${scorersView}`;
       fetch(`/api/madrid/scorers${query}`, { cache: "no-store" })
@@ -189,7 +215,17 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
         )
         .catch(() => setScorersByComp((prev) => ({ ...prev, [scorersView]: [] })));
     }
-  }, [activeTab, standings, squad, scorersByComp, scorersView, standingsView, champions]);
+  }, [
+    activeTab,
+    standings,
+    squad,
+    scorersByComp,
+    scorersView,
+    standingsView,
+    champions,
+    ligasLeague,
+    leagueCal,
+  ]);
 
   function handleRefresh() {
     setRefreshTick((t) => t + 1);
@@ -379,12 +415,12 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
       {/* Content */}
       <div className="container-shell pt-4 pb-8 sm:py-8">
         <div className="flex flex-col gap-4 rounded-lg border border-[var(--rm-border)] bg-[var(--rm-card-bg)] p-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
-          <div className="grid grid-cols-4 rounded-md bg-[var(--rm-panel-bg)] p-1">
+          <div className="grid grid-cols-5 rounded-md bg-[var(--rm-panel-bg)] p-1">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
-                className={`focus-ring min-h-10 rounded-md px-2 text-center text-xs font-bold transition sm:text-sm ${
+                className={`focus-ring min-h-10 rounded-md px-1 text-center text-[11px] font-bold transition sm:px-2 sm:text-sm ${
                   activeTab === tab.id
                     ? "bg-[var(--rm-accent)] text-[var(--rm-accent-fg)] shadow-sm"
                     : "text-[var(--rm-muted)] hover:text-[var(--rm-text)]"
@@ -601,6 +637,77 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
                   : "Aún no hay goleadores: se llenará cuando arranque la competición."}
               </p>
             )}
+          </section>
+        ) : null}
+
+        {activeTab === "ligas" ? (
+          <section className="mt-6">
+            <div className="flex flex-col gap-3 rounded-lg border border-[var(--rm-border)] bg-[var(--rm-card-bg)] p-3 shadow-sm sm:flex-row sm:items-center">
+              <div className="grid grid-cols-2 rounded-md bg-[var(--rm-panel-bg)] p-1 sm:w-64">
+                {(
+                  [
+                    ["esp.1", "Primera"],
+                    ["esp.2", "Segunda"],
+                  ] as [LeagueId, string][]
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => {
+                      setLigasLeague(key);
+                      setLigasTeam("todos");
+                    }}
+                    className={`focus-ring min-h-9 rounded-md px-3 text-sm font-bold transition ${
+                      ligasLeague === key
+                        ? "bg-[var(--rm-accent)] text-[var(--rm-accent-fg)]"
+                        : "text-[var(--rm-muted)] hover:text-[var(--rm-text)]"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <select
+                aria-label="Filtrar por equipo"
+                className="min-h-9 flex-1 rounded-md border border-[var(--rm-border)] bg-[var(--rm-panel-bg)] px-3 text-sm text-[var(--rm-text)] outline-none transition focus:border-[var(--rm-accent)]"
+                value={ligasTeam}
+                onChange={(event) => setLigasTeam(event.target.value)}
+              >
+                <option value="todos">Todos los equipos</option>
+                {(leagueCal[ligasLeague]?.teams ?? []).map((team) => (
+                  <option key={team} value={team}>
+                    {team}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {leagueCal[ligasLeague] === null ? (
+              <p className="mt-4 text-sm text-[var(--rm-muted)]">Cargando calendario…</p>
+            ) : (
+              (() => {
+                const all = leagueCal[ligasLeague]?.matches ?? [];
+                const list =
+                  ligasTeam === "todos"
+                    ? all
+                    : all.filter((m) => m.home === ligasTeam || m.away === ligasTeam);
+                return list.length > 0 ? (
+                  <div className="mt-4 space-y-2">
+                    {list.map((m) => (
+                      <LeagueMatchRow key={m.id} match={m} />
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-4 rounded-lg border border-[var(--rm-border)] bg-[var(--rm-card-bg)] p-4 text-sm text-[var(--rm-muted)]">
+                    No hay partidos en las próximas semanas para este filtro.
+                  </p>
+                );
+              })()
+            )}
+            <p className="mt-3 text-xs text-[var(--rm-muted)]">
+              Próximas ~8 semanas de {ligasLeague === "esp.1" ? "Primera" : "Segunda"}. Filtra por
+              equipo para ver sus próximos partidos.
+            </p>
           </section>
         ) : null}
 

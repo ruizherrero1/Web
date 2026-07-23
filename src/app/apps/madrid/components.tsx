@@ -12,9 +12,12 @@ import {
 import { themeConfigs } from "./theme";
 import type {
   CompId,
+  LeagueMatch,
   LineupPlayer,
+  LiveLineupPlayer,
   MadridMatch,
   MatchDetail,
+  MatchLive,
   Scorer,
   SquadPlayer,
   StandingRow,
@@ -129,9 +132,14 @@ export function LiveBadge({ minute }: { minute?: string }) {
 
 export function MatchRow({ match, domId }: { match: MadridMatch; domId?: string }) {
   const score = scoreLabel(match);
-  const canExpand = Boolean(match.detailId) && match.status !== "upcoming";
+  // Terminados con footballdata.io (xG/posesion); proximos/en directo (y
+  // terminados sin footballdata) con ESPN summary (once, cambios, tarjetas).
+  const useFootball = Boolean(match.detailId) && match.status === "finished";
+  const useLive = !useFootball && Boolean(match.espnId);
+  const canExpand = useFootball || useLive;
   const [expanded, setExpanded] = useState(false);
   const [detail, setDetail] = useState<MatchDetail | null>(null);
+  const [live, setLive] = useState<MatchLive | null>(null);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
 
@@ -139,11 +147,17 @@ export function MatchRow({ match, domId }: { match: MadridMatch; domId?: string 
     if (!canExpand) return;
     const next = !expanded;
     setExpanded(next);
-    if (next && detail === null && !loading && !failed) {
+    if (next && detail === null && live === null && !loading && !failed) {
       setLoading(true);
-      fetch(`/api/madrid/match/${match.detailId}`, { cache: "no-store" })
+      const url = useFootball
+        ? `/api/madrid/match/${match.detailId}`
+        : `/api/madrid/live/${match.espnId}?comp=${match.comp}`;
+      fetch(url, { cache: "no-store" })
         .then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
-        .then((payload) => setDetail(payload.detail as MatchDetail))
+        .then((payload) => {
+          if (useFootball) setDetail(payload.detail as MatchDetail);
+          else setLive(payload.live as MatchLive);
+        })
         .catch(() => setFailed(true))
         .finally(() => setLoading(false));
     }
@@ -212,12 +226,14 @@ export function MatchRow({ match, domId }: { match: MadridMatch; domId?: string 
             <p className="mt-3 border-t border-[var(--rm-border-inner)] pt-3 text-center text-xs text-[var(--rm-muted)]">
               Cargando detalle…
             </p>
-          ) : failed || !detail ? (
+          ) : detail ? (
+            <MatchDetailPanel detail={detail} />
+          ) : live ? (
+            <LiveDetailPanel live={live} upcoming={match.status === "upcoming"} />
+          ) : (
             <p className="mt-3 border-t border-[var(--rm-border-inner)] pt-3 text-center text-xs text-[var(--rm-muted)]">
               No hay detalle disponible para este partido.
             </p>
-          ) : (
-            <MatchDetailPanel detail={detail} />
           )}
         </div>
       ) : null}
@@ -715,4 +731,150 @@ function Cell({ children }: { children: React.ReactNode }) {
 
 function HiddenCell({ children }: { children: React.ReactNode }) {
   return <td className="hidden px-3 py-3 text-center text-[var(--rm-muted)] sm:table-cell">{children}</td>;
+}
+
+// --- Detalle en directo / pre-partido (ESPN summary): goles, tarjetas, cambios
+// y onces. Disponible cuando ESPN publica el once (pre-partido) y en directo. ---
+const LIVE_ICON: Record<string, string> = { goal: "⚽", yellow: "🟨", red: "🟥", sub: "🔁" };
+
+function LiveLineupColumn({
+  line,
+  align,
+}: {
+  line: { starters: LiveLineupPlayer[]; bench: LiveLineupPlayer[] };
+  align: "left" | "right";
+}) {
+  return (
+    <div className={align === "right" ? "text-right" : ""}>
+      <ul className="space-y-1">
+        {line.starters.map((player, index) => (
+          <li key={`${player.name}-${index}`} className="text-[11px] text-[var(--rm-text)]">
+            <span className="text-[var(--rm-muted)]">{player.number ?? "·"}</span>{" "}
+            <span className="font-medium">{player.name}</span>
+            {player.subbedOut ? <span className="text-[var(--rm-loss)]"> ↓</span> : null}
+          </li>
+        ))}
+      </ul>
+      {line.bench.some((p) => p.subbedIn) ? (
+        <>
+          <p className="mt-2 text-[9px] font-black uppercase tracking-[0.08em] text-[var(--rm-muted)]">
+            Entraron
+          </p>
+          <ul className="space-y-0.5">
+            {line.bench
+              .filter((p) => p.subbedIn)
+              .map((player, index) => (
+                <li key={`${player.name}-${index}`} className="text-[10px] text-[var(--rm-muted)]">
+                  {player.number ?? "·"} {player.name} <span className="text-[var(--rm-win)]">↑</span>
+                </li>
+              ))}
+          </ul>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+export function LiveDetailPanel({ live, upcoming }: { live: MatchLive; upcoming: boolean }) {
+  if (!live.hasLineups && live.events.length === 0) {
+    return (
+      <p className="mt-3 border-t border-[var(--rm-border-inner)] pt-3 text-center text-xs text-[var(--rm-muted)]">
+        {upcoming
+          ? "Las alineaciones se publican ~1 h antes del partido; aparecerán aquí."
+          : "Sin datos de alineación para este partido."}
+      </p>
+    );
+  }
+  return (
+    <div className="mt-3 space-y-4 border-t border-[var(--rm-border-inner)] pt-3">
+      {live.homeScore != null && live.awayScore != null ? (
+        <p className="text-center text-sm font-black text-[var(--rm-text)]">
+          {live.home} {live.homeScore} - {live.awayScore} {live.away}
+        </p>
+      ) : null}
+
+      {live.events.length > 0 ? (
+        <div className="space-y-1">
+          {live.events.map((event, index) => {
+            const text = (
+              <span className="min-w-0 truncate text-[var(--rm-text)]">
+                {event.player}
+                {event.type === "goal" && event.assist ? (
+                  <span className="text-[var(--rm-muted)]"> ({event.assist})</span>
+                ) : null}
+                {event.type === "sub" && event.playerOut ? (
+                  <span className="text-[var(--rm-muted)]"> ↔ {event.playerOut}</span>
+                ) : null}
+              </span>
+            );
+            const minute = (
+              <span className="w-11 shrink-0 font-bold text-[var(--rm-accent)]">{event.minute}</span>
+            );
+            const icon = <span aria-hidden>{LIVE_ICON[event.type]}</span>;
+            return (
+              <div
+                key={index}
+                className={`flex items-center gap-2 text-[11px] ${event.side === "away" ? "flex-row-reverse text-right" : ""}`}
+              >
+                {minute}
+                {icon}
+                {text}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {live.hasLineups ? (
+        <div>
+          <p className="mb-2 text-center text-[10px] font-black uppercase tracking-[0.1em] text-[var(--rm-muted)]">
+            Onces iniciales
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <LiveLineupColumn line={live.lineups.home} align="left" />
+            <LiveLineupColumn line={live.lineups.away} align="right" />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// --- Fila del calendario general de ligas (cualquier equipo) ---
+export function LeagueMatchRow({ match }: { match: LeagueMatch }) {
+  const showScore =
+    match.status !== "upcoming" && match.homeScore != null && match.awayScore != null;
+  return (
+    <div
+      className={`flex items-center gap-2 rounded-lg border p-2.5 shadow-sm ${
+        match.isMadrid
+          ? "border-[var(--rm-accent)] bg-[var(--rm-row-hl)]"
+          : "border-[var(--rm-border)] bg-[var(--rm-card-bg)]"
+      }`}
+    >
+      <div className="w-16 shrink-0 text-[11px] leading-tight text-[var(--rm-muted)]">
+        <div className="font-bold capitalize text-[var(--rm-text)]">
+          {formatMadridDate(match.startsAt)}
+        </div>
+        <div>{formatMadridTime(match.startsAt)}</div>
+      </div>
+      <div className="grid flex-1 grid-cols-[1fr_auto_1fr] items-center gap-1.5 text-[13px] font-semibold">
+        <div className="flex min-w-0 items-center justify-end gap-1.5">
+          <span className="truncate text-[var(--rm-text)]">{match.home}</span>
+          <TeamLogo src={match.homeLogo} alt={match.home} size={22} />
+        </div>
+        <div className="shrink-0 whitespace-nowrap rounded bg-[var(--rm-score-bg)] px-2 py-0.5 text-xs font-black text-[var(--rm-score-text)]">
+          {showScore
+            ? `${match.homeScore} - ${match.awayScore}`
+            : match.status === "live"
+              ? "LIVE"
+              : "vs"}
+        </div>
+        <div className="flex min-w-0 items-center gap-1.5">
+          <TeamLogo src={match.awayLogo} alt={match.away} size={22} />
+          <span className="truncate text-[var(--rm-text)]">{match.away}</span>
+        </div>
+      </div>
+    </div>
+  );
 }
