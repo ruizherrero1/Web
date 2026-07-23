@@ -4,7 +4,9 @@
 // de Clubes), asi que la unidad basica es el partido con su competicion.
 
 export type ThemeId = "noche" | "blanco" | "oro";
-export type TabId = "partidos" | "clasificacion" | "plantilla" | "goleadores";
+export type TabId = "partidos" | "clasificacion" | "plantilla" | "goleadores" | "ligas";
+
+export type LeagueId = "esp.1" | "esp.2";
 
 export type CompId =
   | "laliga"
@@ -40,7 +42,62 @@ export type MadridMatch = {
   rival: string;
   rivalLogo?: string;
   result?: MadridResult;
-  detailId?: number; // match_id de footballdata.io para el detalle
+  detailId?: number; // match_id de footballdata.io para el detalle (terminados)
+  espnId?: string; // id de evento ESPN para el detalle en directo (once/cambios)
+};
+
+// Partido generico para el calendario general de ligas (cualquier equipo).
+export type LeagueMatch = {
+  id: string;
+  startsAt: string;
+  date: string;
+  home: string;
+  away: string;
+  homeLogo?: string;
+  awayLogo?: string;
+  status: MatchStatus;
+  statusDetail?: string;
+  homeScore?: number;
+  awayScore?: number;
+  isMadrid: boolean;
+};
+
+export type LeagueCalendar = {
+  matches: LeagueMatch[];
+  teams: string[];
+};
+
+// Detalle en directo / pre-partido del Madrid (ESPN summary).
+export type LiveEvent = {
+  minute?: string;
+  side: "home" | "away";
+  type: "goal" | "yellow" | "red" | "sub";
+  player: string;
+  assist?: string;
+  playerOut?: string;
+};
+
+export type LiveLineupPlayer = {
+  name: string;
+  number?: number;
+  position?: string;
+  subbedOut?: boolean;
+  subbedIn?: boolean;
+};
+
+export type MatchLive = {
+  status: MatchStatus;
+  statusDetail?: string;
+  home: string;
+  away: string;
+  homeScore?: number;
+  awayScore?: number;
+  events: LiveEvent[];
+  lineups: {
+    home: { starters: LiveLineupPlayer[]; bench: LiveLineupPlayer[] };
+    away: { starters: LiveLineupPlayer[]; bench: LiveLineupPlayer[] };
+  };
+  hasLineups: boolean;
 };
 
 export type MatchGoal = {

@@ -2,10 +2,17 @@ import { unstable_cache } from "next/cache";
 import type {
   ChampionsStandings,
   CompId,
+  LeagueCalendar,
+  LeagueId,
+  LeagueMatch,
+  LiveEvent,
+  LiveLineupPlayer,
   MadridData,
+  MatchStatus,
   MadridMatch,
   MadridResult,
   MatchDetail,
+  MatchLive,
   Scorer,
   SquadPlayer,
   StandingRow,
@@ -174,6 +181,7 @@ function normalizeEvent(event: EspnEvent, league: LeagueConfig): MadridMatch | n
     rival: (isMadridHome ? away.team?.displayName : home.team?.displayName) ?? "?",
     rivalLogo: teamLogo(isMadridHome ? away : home),
     result,
+    espnId: event.id ? String(event.id) : undefined,
   };
 }
 
@@ -1091,5 +1099,182 @@ async function fetchLeagueScorers(comp: "laliga" | "champions"): Promise<Scorer[
 export async function getLeagueScorers(comp: "laliga" | "champions"): Promise<Scorer[]> {
   return unstable_cache(() => fetchLeagueScorers(comp), ["madrid-league-scorers", comp], {
     revalidate: 3600,
+  })();
+}
+
+// --- Calendario general de ligas (Primera esp.1 + Segunda esp.2, cualquier
+// equipo). Ventana ~2 meses via scoreboard de ESPN, keyless. ---
+async function fetchLeagueCalendar(league: LeagueId): Promise<LeagueCalendar> {
+  const url = `${ESPN_SITE}/${league}/scoreboard?dates=${espnDateRange(60)}&limit=300`;
+  try {
+    const response = await fetch(url, { next: { revalidate: 1800 } });
+    if (!response.ok) throw new Error(`ESPN calendar ${league} HTTP ${response.status}`);
+    const data = (await response.json()) as EspnScheduleResponse;
+    const matches: LeagueMatch[] = [];
+    const teams = new Set<string>();
+    for (const event of data.events ?? []) {
+      const competition = event.competitions?.[0];
+      const home = competition?.competitors?.find((c) => c.homeAway === "home");
+      const away = competition?.competitors?.find((c) => c.homeAway === "away");
+      if (!home || !away || !event.date) continue;
+      const kickoff = new Date(event.date);
+      if (Number.isNaN(kickoff.getTime())) continue;
+      const { status, detail } = statusOf(event, competition?.status?.type);
+      const homeName = home.team?.displayName ?? home.team?.shortDisplayName ?? "?";
+      const awayName = away.team?.displayName ?? away.team?.shortDisplayName ?? "?";
+      teams.add(homeName);
+      teams.add(awayName);
+      matches.push({
+        id: `${league}-${event.id ?? kickoff.toISOString()}`,
+        startsAt: kickoff.toISOString(),
+        date: kickoff.toISOString().slice(0, 10),
+        home: homeName,
+        away: awayName,
+        homeLogo: teamLogo(home),
+        awayLogo: teamLogo(away),
+        status,
+        statusDetail: detail,
+        homeScore: status === "upcoming" ? undefined : toScore(home.score),
+        awayScore: status === "upcoming" ? undefined : toScore(away.score),
+        isMadrid: home.team?.id === ESPN_TEAM_ID || away.team?.id === ESPN_TEAM_ID,
+      });
+    }
+    matches.sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+    return { matches, teams: Array.from(teams).sort((a, b) => a.localeCompare(b, "es")) };
+  } catch (error) {
+    console.warn(`[madrid] league calendar ${league} unavailable:`, error);
+    return { matches: [], teams: [] };
+  }
+}
+
+export async function getLeagueCalendar(league: LeagueId): Promise<LeagueCalendar> {
+  return unstable_cache(() => fetchLeagueCalendar(league), ["madrid-league-cal-v1", league], {
+    revalidate: 1800,
+  })();
+}
+
+// --- Detalle en directo / pre-partido del Madrid (ESPN summary, keyless). ---
+const COMP_SLUG: Record<CompId, string> = {
+  laliga: "esp.1",
+  champions: "uefa.champions",
+  copa: "esp.copa_del_rey",
+  supercopa: "esp.super_cup",
+  mundialito: "fifa.cwc",
+};
+
+type EspnSummaryAthlete = {
+  athlete?: { displayName?: string | null };
+  jersey?: string | null;
+  starter?: boolean;
+  subbedIn?: boolean;
+  subbedOut?: boolean;
+  position?: { abbreviation?: string | null };
+};
+type EspnSummaryRoster = {
+  homeAway?: "home" | "away";
+  team?: { id?: string; displayName?: string | null };
+  roster?: EspnSummaryAthlete[];
+};
+type EspnKeyEvent = {
+  type?: { text?: string | null };
+  clock?: { displayValue?: string | null };
+  team?: { id?: string };
+  participants?: Array<{ athlete?: { displayName?: string | null } }>;
+};
+type EspnSummary = {
+  rosters?: EspnSummaryRoster[];
+  keyEvents?: EspnKeyEvent[];
+  header?: {
+    competitions?: Array<{
+      status?: { type?: { state?: string; shortDetail?: string | null } };
+      competitors?: Array<{ homeAway?: string; score?: string; team?: { id?: string; displayName?: string | null } }>;
+    }>;
+  };
+};
+
+function mapLiveLineup(roster?: EspnSummaryAthlete[]) {
+  const starters: LiveLineupPlayer[] = [];
+  const bench: LiveLineupPlayer[] = [];
+  for (const player of roster ?? []) {
+    const mapped: LiveLineupPlayer = {
+      name: player.athlete?.displayName ?? "?",
+      number: player.jersey ? Number(player.jersey) || undefined : undefined,
+      position: player.position?.abbreviation ?? undefined,
+      subbedOut: player.subbedOut || undefined,
+      subbedIn: player.subbedIn || undefined,
+    };
+    (player.starter ? starters : bench).push(mapped);
+  }
+  return { starters, bench };
+}
+
+function liveEventType(text: string): LiveEvent["type"] | null {
+  if (text.includes("Goal")) return "goal";
+  if (text.includes("Yellow")) return "yellow";
+  if (text.includes("Red")) return "red";
+  if (text.includes("Substitution")) return "sub";
+  return null;
+}
+
+async function fetchMatchLive(espnId: string, comp: CompId): Promise<MatchLive | null> {
+  const slug = COMP_SLUG[comp] ?? "esp.1";
+  try {
+    const response = await fetch(`${ESPN_SITE}/${slug}/summary?event=${espnId}`, {
+      next: { revalidate: 30 },
+    });
+    if (!response.ok) throw new Error(`ESPN summary HTTP ${response.status}`);
+    const data = (await response.json()) as EspnSummary;
+    const competition = data.header?.competitions?.[0];
+    const homeC = competition?.competitors?.find((c) => c.homeAway === "home");
+    const awayC = competition?.competitors?.find((c) => c.homeAway === "away");
+    const state = competition?.status?.type?.state;
+    const status: MatchStatus = state === "in" ? "live" : state === "post" ? "finished" : "upcoming";
+
+    const homeRoster = data.rosters?.find((r) => r.homeAway === "home");
+    const awayRoster = data.rosters?.find((r) => r.homeAway === "away");
+    const sideById = new Map<string, "home" | "away">();
+    if (homeC?.team?.id) sideById.set(homeC.team.id, "home");
+    if (awayC?.team?.id) sideById.set(awayC.team.id, "away");
+    if (homeRoster?.team?.id) sideById.set(homeRoster.team.id, "home");
+    if (awayRoster?.team?.id) sideById.set(awayRoster.team.id, "away");
+
+    const events: LiveEvent[] = [];
+    for (const event of data.keyEvents ?? []) {
+      const type = liveEventType(event.type?.text ?? "");
+      if (!type) continue;
+      const parts = event.participants ?? [];
+      events.push({
+        minute: event.clock?.displayValue ?? undefined,
+        side: sideById.get(event.team?.id ?? "") ?? "home",
+        type,
+        player: parts[0]?.athlete?.displayName ?? "?",
+        assist: type === "goal" ? parts[1]?.athlete?.displayName ?? undefined : undefined,
+        playerOut: type === "sub" ? parts[1]?.athlete?.displayName ?? undefined : undefined,
+      });
+    }
+
+    const home = mapLiveLineup(homeRoster?.roster);
+    const away = mapLiveLineup(awayRoster?.roster);
+
+    return {
+      status,
+      statusDetail: competition?.status?.type?.shortDetail ?? undefined,
+      home: homeC?.team?.displayName ?? homeRoster?.team?.displayName ?? "?",
+      away: awayC?.team?.displayName ?? awayRoster?.team?.displayName ?? "?",
+      homeScore: status !== "upcoming" && homeC?.score != null ? Number(homeC.score) : undefined,
+      awayScore: status !== "upcoming" && awayC?.score != null ? Number(awayC.score) : undefined,
+      events,
+      lineups: { home, away },
+      hasLineups: home.starters.length > 0 || away.starters.length > 0,
+    };
+  } catch (error) {
+    console.warn(`[madrid] match live ${espnId} unavailable:`, error);
+    return null;
+  }
+}
+
+export async function getMatchLive(espnId: string, comp: CompId): Promise<MatchLive | null> {
+  return unstable_cache(() => fetchMatchLive(espnId, comp), ["madrid-match-live-v1", espnId], {
+    revalidate: 30,
   })();
 }
