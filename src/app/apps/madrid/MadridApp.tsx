@@ -33,6 +33,32 @@ import type {
 } from "./types";
 
 const DATA_URL = "/api/madrid/data";
+const LIGAS_STORAGE_KEY = "madrid-ligas-filter-v1";
+
+// Lee el filtro guardado de la pestana Ligas (o los valores por defecto). En SSR
+// no hay localStorage; se resuelve en el cliente. Como la pestana Ligas no se
+// pinta en la carga inicial, no hay desajuste de hidratacion.
+function readLigasFilter(): { league: LeagueId; teams: Record<LeagueId, string> } {
+  const fallback = {
+    league: "esp.1" as LeagueId,
+    teams: { "esp.1": "todos", "esp.2": "todos" },
+  };
+  if (typeof window === "undefined") return fallback;
+  try {
+    const raw = window.localStorage.getItem(LIGAS_STORAGE_KEY);
+    if (!raw) return fallback;
+    const saved = JSON.parse(raw) as { league?: string; teams?: Record<string, string> };
+    return {
+      league: saved.league === "esp.2" ? "esp.2" : "esp.1",
+      teams: {
+        "esp.1": saved.teams?.["esp.1"] ?? "todos",
+        "esp.2": saved.teams?.["esp.2"] ?? "todos",
+      },
+    };
+  } catch {
+    return fallback;
+  }
+}
 
 const tabs: { id: TabId; label: string; short: string }[] = [
   { id: "partidos", label: "Partidos", short: "Partidos" },
@@ -76,8 +102,13 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
   const [standingsView, setStandingsView] = useState<"laliga" | "champions">("laliga");
   const [champions, setChampions] = useState<ChampionsStandings | null>(null);
   const [squad, setSquad] = useState<SquadPlayer[] | null>(null);
-  const [ligasLeague, setLigasLeague] = useState<LeagueId>("esp.1");
-  const [ligasTeam, setLigasTeam] = useState<string>("todos");
+  // Filtro de Ligas (liga + equipo por liga) recordado entre visitas via
+  // localStorage. Init perezosa (no effect/rAF, robusto en pestanas de fondo).
+  const [ligasLeague, setLigasLeague] = useState<LeagueId>(() => readLigasFilter().league);
+  const [ligasTeamByLeague, setLigasTeamByLeague] = useState<Record<LeagueId, string>>(
+    () => readLigasFilter().teams,
+  );
+  const ligasTeam = ligasTeamByLeague[ligasLeague];
   const [leagueCal, setLeagueCal] = useState<Record<LeagueId, LeagueCalendar | null>>({
     "esp.1": null,
     "esp.2": null,
@@ -95,6 +126,18 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
     const frame = window.requestAnimationFrame(() => setActiveTheme(saved));
     return () => window.cancelAnimationFrame(frame);
   }, []);
+
+  // Guarda el filtro de Ligas cada vez que cambia.
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        LIGAS_STORAGE_KEY,
+        JSON.stringify({ league: ligasLeague, teams: ligasTeamByLeague }),
+      );
+    } catch {
+      // ignora si localStorage no esta disponible
+    }
+  }, [ligasLeague, ligasTeamByLeague]);
 
   useEffect(() => {
     const isStandalone =
@@ -653,10 +696,7 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
                   <button
                     key={key}
                     type="button"
-                    onClick={() => {
-                      setLigasLeague(key);
-                      setLigasTeam("todos");
-                    }}
+                    onClick={() => setLigasLeague(key)}
                     className={`focus-ring min-h-9 rounded-md px-3 text-sm font-bold transition ${
                       ligasLeague === key
                         ? "bg-[var(--rm-accent)] text-[var(--rm-accent-fg)]"
@@ -671,7 +711,9 @@ export function MadridApp({ initialData = null }: MadridAppProps) {
                 aria-label="Filtrar por equipo"
                 className="min-h-9 flex-1 rounded-md border border-[var(--rm-border)] bg-[var(--rm-panel-bg)] px-3 text-sm text-[var(--rm-text)] outline-none transition focus:border-[var(--rm-accent)]"
                 value={ligasTeam}
-                onChange={(event) => setLigasTeam(event.target.value)}
+                onChange={(event) =>
+                  setLigasTeamByLeague((prev) => ({ ...prev, [ligasLeague]: event.target.value }))
+                }
               >
                 <option value="todos">Todos los equipos</option>
                 {(leagueCal[ligasLeague]?.teams ?? []).map((team) => (
